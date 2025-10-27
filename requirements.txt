@@ -3,4 +3,4 @@ uvicorn
 requests
 zstandard
 cryptography
-pyblake3
+blake3
