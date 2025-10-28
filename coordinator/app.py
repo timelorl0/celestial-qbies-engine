@@ -71,3 +71,21 @@ def parity_execute(file: str, parity_group: str):
 # Mount DaoEngine routes
 from .dao_engine.api_routes import router as dao_router
 app.include_router(dao_router)
+
+
+# === AUTO-ADDED HEALTH & ROOT ROUTES ===
+from fastapi import FastAPI
+try:
+    app
+except NameError:
+    app = FastAPI()
+
+@app.get("/")
+def root():
+    return {"message": "QBIES Celestial Engine is alive!"}
+
+@app.get("/health")
+def health():
+    return {"ok": True, "version": "1.0", "status": "running"}
+# === END AUTO-ADDED ROUTES ===
+
