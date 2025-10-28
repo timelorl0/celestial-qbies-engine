@@ -1,15 +1,1 @@
-import os, time, requests
-
-print('🧠 External Watchdog started — cron-job.org expected to ping /health.')
-
-SELF_URL = os.environ.get('SELF_URL', 'https://celestial-qbies-engine.onrender.com/health')
-while True:
-    try:
-        res = requests.get(SELF_URL, timeout=10)
-        if res.status_code == 200:
-            print('✅ External ping OK')
-        else:
-            print(f'⚠️ Ping failed: {res.status_code}')
-    except Exception as e:
-        print(f'❌ External ping exception: {e}')
-    time.sleep(300)
+import os, time, requests\nAPI=os.getenv("RENDER_API_KEY")\nSID=os.getenv("RENDER_SERVICE_ID")\nURL=f"https://api.render.com/v1/services/{SID}/deploys"\nwhile True:\n try:\n  r=requests.get("https://celestial-qbies-engine.onrender.com/health",timeout=10)\n  if r.status_code!=200: raise Exception("Health check failed")\n  print("[OK] Service healthy.")\n except Exception as e:\n  print(f"[Worker] Redeploy triggered: {e}")\n  if API and SID: requests.post(URL,headers={"Authorization":f"Bearer {API}"})\n time.sleep(300)
