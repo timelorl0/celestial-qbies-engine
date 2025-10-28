@@ -42,18 +42,28 @@ def status():
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
     status_text = "Healing..." if healing else "Stable"
-    parts = [
-        "<html><head><meta http-equiv=refresh content=5>",
-        "<style>body{font-family:monospace;background:#000;color:#0f0;text-align:center;}</style></head>",
-        "<body>",
-        "<h2>🌌 Celestial Engine v1.3 Auto-Heal Quantum Core 🌌</h2>",
-        f"<p>Alpha: {energy[alpha]}</p>",
-        f"<p>Beta: {energy[beta]}</p>",
-        f"<p>Gamma: {energy[gamma]}</p>",
-        f"<p>Entropy: {entropy}</p>",
-        f"<p>Status: {status_text}</p>",
-        f"<p>Uptime: {int(time.time() - start_time)} s</p>",
-        "<p>(Auto-refresh mỗi 5 giây)</p>",
-        "</body></html>"
-    ]
-    return "".join(parts)
+    html = """
+    <html>
+    <head><meta http-equiv=refresh content=5>
+    <style>
+        body { font-family: monospace; background: #000; color: #0f0; text-align: center; }
+    </style></head>
+    <body>
+        <h2>🌌 Celestial Engine v1.3 Auto-Heal Quantum Core 🌌</h2>
+        <p>Alpha: {alpha}</p>
+        <p>Beta: {beta}</p>
+        <p>Gamma: {gamma}</p>
+        <p>Entropy: {entropy}</p>
+        <p>Status: {status}</p>
+        <p>Uptime: {uptime} s</p>
+        <p>(Auto-refresh mỗi 5 giây)</p>
+    </body></html>
+    """.format(
+        alpha=energy["alpha"],
+        beta=energy["beta"],
+        gamma=energy["gamma"],
+        entropy=entropy,
+        status=status_text,
+        uptime=int(time.time() - start_time)
+    )
+    return html
