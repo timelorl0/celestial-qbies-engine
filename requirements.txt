@@ -4,3 +4,4 @@ requests
 zstandard
 cryptography
 blake3
+requests
