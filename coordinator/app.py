@@ -41,29 +41,18 @@ def status():
 @app.get("/", response_class=HTMLResponse)
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
-    html = f"""
-    <html>
-    <head>
-        <meta http-equiv=refresh content=5>
-        <style>
-            body {{
-                font-family: monospace;
-                background: #000;
-                color: #0f0;
-                text-align: center;
-            }}
-        </style>
-    </head>
-    <body>
-        <h2>🌌 Celestial Engine v1.3 Auto-Heal Quantum Core 🌌</h2>
-        <p>Alpha: {energy[alpha]}</p>
-        <p>Beta: {energy[beta]}</p>
-        <p>Gamma: {energy[gamma]}</p>
-        <p>Entropy: {entropy}</p>
-        <p>Status: {Healing... if healing else Stable}</p>
-        <p>Uptime: {int(time.time() - start_time)} s</p>
-        <p>(Auto-refresh mỗi 5 giây)</p>
-    </body>
-    </html>
-    """
+    status_text = "Healing..." if healing else "Stable"
+    html = (
+        "<html><head><meta http-equiv=refresh content=5>"
+        "<style>body{font-family:monospace;background:#000;color:#0f0;text-align:center;}</style></head><body>"
+        "<h2>🌌 Celestial Engine v1.3 Auto-Heal Quantum Core 🌌</h2>"
+        f"<p>Alpha: {energy[alpha]}</p>"
+        f"<p>Beta: {energy[beta]}</p>"
+        f"<p>Gamma: {energy[gamma]}</p>"
+        f"<p>Entropy: {entropy}</p>"
+        f"<p>Status: {status_text}</p>"
+        f"<p>Uptime: {int(time.time() - start_time)} s</p>"
+        "<p>(Auto-refresh mỗi 5 giây)</p>"
+        "</body></html>"
+    )
     return html
