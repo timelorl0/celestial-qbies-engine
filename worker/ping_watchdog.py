@@ -1,1 +1,28 @@
-import os, time, sys\napi_key = os.environ.get("RENDER_API_KEY")\nservice_id = os.environ.get("RENDER_SERVICE_ID")\nif not api_key or not service_id:\n    print("⚠️ WARNING: Missing RENDER_API_KEY or RENDER_SERVICE_ID. Using external cron-job.org instead.")\n    while True:\n        print("[Worker] Passive standby mode — cron-job.org expected to ping /health endpoint.")\n        time.sleep(3600)\nelse:\n    import requests\n    print(f"✅ Watchdog active for service {service_id}")\n    while True:\n        try:\n            res = requests.post(\n                f"https://api.render.com/v1/services/{service_id}/deploys",\n                headers={"Authorization": f"Bearer {api_key}"}\n            )\n            print(f"[Worker] Triggered redeploy — status: {res.status_code}")\n        except Exception as e:\n            print(f"[Worker ERROR] {e}")\n        time.sleep(3600)\n
+import os, time, sys, requests
+
+print('🧠 Passive Watchdog started (no API key mode). Using cron-job.org expected to ping /health endpoint.')
+
+SELF_URL = os.environ.get('SELF_URL', 'https://celestial-qbies-engine.onrender.com/health')
+INTERVAL = int(os.environ.get('PING_INTERVAL', '300'))
+MAX_FAILS = int(os.environ.get('MAX_FAILS', '3'))
+
+fail_count = 0
+while True:
+    try:
+        res = requests.get(SELF_URL, timeout=10)
+        if res.status_code == 200:
+            fail_count = 0
+            print(f'✅ Health OK — {res.status_code}')
+        else:
+            fail_count += 1
+            print(f'⚠️ Health failed — code {res.status_code}, fail {fail_count}/{MAX_FAILS}')
+    except Exception as e:
+        fail_count += 1
+        print(f'❌ Exception: {e}, fail {fail_count}/{MAX_FAILS}')
+
+    if fail_count >= MAX_FAILS:
+        print('🚨 Too many failures — restarting...')
+        time.sleep(2)
+        os._exit(0)
+
+    time.sleep(INTERVAL)
