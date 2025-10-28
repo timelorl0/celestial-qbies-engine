@@ -1,1 +1,56 @@
-from datetime import datetime, timedelta\nfrom fastapi import FastAPI, Request\nimport os, time, threading\n\napp = FastAPI()\n\n# === Core Server ===\nstart_time = datetime.utcnow()\nADMIN_PASSWORD = os.environ.get("ADMIN_PASS", "admin15081508")  # mật khẩu restart mặc định\n\n@app.get("/health")\ndef health():\n    now = datetime.utcnow()\n    uptime = str(now - start_time).split(".")[0]\n    print(f"[{now.strftime(%Y-%m-%d %H:%M:%S)}] 🩺 Health ping — uptime: {uptime}")\n    return {"ok": True, "status": "running", "uptime": uptime, "time": now.strftime(%Y-%m-%d %H:%M:%S UTC)}\n\n@app.get("/uptime")\ndef get_uptime():\n    now = datetime.utcnow()\n    uptime = str(now - start_time).split(".")[0]\n    return {"uptime": uptime, "since": start_time.strftime(%Y-%m-%d %H:%M:%S UTC)}\n\n@app.post("/restart")\ndef restart(req: Request):\n    data = {}\n    try:\n        data = req.json() if req.headers.get(content-type) == application/json else {}\n    except:\n        pass\n    pwd = data.get(password) if isinstance(data, dict) else None\n    if pwd != ADMIN_PASSWORD:\n        print(f"[{datetime.utcnow().strftime(%H:%M:%S)}] ❌ Unauthorized restart attempt")\n        return {"ok": False, "error": "Invalid password"}\n\n    def do_restart():\n        print(f"[{datetime.utcnow().strftime(%H:%M:%S)}] 🔁 Restart triggered by admin")\n        time.sleep(2)\n        os._exit(0)\n\n    threading.Thread(target=do_restart, daemon=True).start()\n    return {"ok": True, "message": "Server restarting..."}\n
+from fastapi import FastAPI, Request
+import os, time, threading, requests
+
+app = FastAPI()
+start_time = time.time()
+ADMIN_PASS = os.environ.get('ADMIN_PASS', 'admin15081508')
+SELF_URL = os.environ.get('SELF_URL', 'https://celestial-qbies-engine.onrender.com/health')
+PING_INTERVAL = int(os.environ.get('PING_INTERVAL', '300'))
+MAX_FAILS = int(os.environ.get('MAX_FAILS', '3'))
+fail_count = 0
+
+@app.get('/health')
+def health():
+    uptime = time.time() - start_time
+    return {'ok': True, 'status': 'running', 'uptime': f'{uptime:.0f}s'}
+
+@app.get('/uptime')
+def uptime():
+    return {'uptime_seconds': int(time.time() - start_time)}
+
+@app.post('/restart')
+async def restart(req: Request):
+    data = await req.json()
+    if data.get('password') == ADMIN_PASS:
+        os._exit(0)
+    return {'error': 'Unauthorized'}
+
+@app.post('/shutdown')
+async def shutdown(req: Request):
+    data = await req.json()
+    if data.get('password') == ADMIN_PASS:
+        os._exit(1)
+    return {'error': 'Unauthorized'}
+
+def watchdog():
+    global fail_count
+    while True:
+        try:
+            res = requests.get(SELF_URL, timeout=10)
+            if res.status_code == 200:
+                fail_count = 0
+                print(f'✅ Health OK — {res.status_code}')
+            else:
+                fail_count += 1
+                print(f'⚠️ Health failed — code {res.status_code}, fail {fail_count}/{MAX_FAILS}')
+        except Exception as e:
+            fail_count += 1
+            print(f'❌ Exception: {e}, fail {fail_count}/{MAX_FAILS}')
+        if fail_count >= MAX_FAILS:
+            print('🚨 Too many failures — restarting...')
+            time.sleep(2)
+            os._exit(0)
+        time.sleep(PING_INTERVAL)
+
+threading.Thread(target=watchdog, daemon=True).start()
+print('🧠 Passive Watchdog started (internal, free mode).')
