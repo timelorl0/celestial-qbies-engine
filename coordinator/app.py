@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 from .qbies_index import QBI
 from .storage import fetch_fragment_bytes, apply_delta, read_shard, write_shard, shard_exists
-from parity import plan_repair_xor, xor_repair_execute
+from .parity import plan_repair_xor, xor_repair_execute
 import os, time, hashlib
 
 app = FastAPI(title="QBIES Coordinator", version="1.1")

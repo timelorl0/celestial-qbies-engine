@@ -1,7 +1,7 @@
 
 from typing import Dict, Any, List
 import os
-from storage import read_shard, write_shard, shard_exists, fragment_path
+from .storage import read_shard, write_shard, shard_exists, fragment_path
 
 def plan_repair_xor(qbi, file: str, parity_group: str, base_dir: str) -> Dict[str, Any]:
     # find file entry
