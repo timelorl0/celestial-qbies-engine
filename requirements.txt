@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-requests
-zstandard
-cryptography
-blake3
-requests
