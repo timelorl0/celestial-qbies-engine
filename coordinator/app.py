@@ -28,26 +28,17 @@ threading.Thread(target=quantum_core, daemon=True).start()
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
     uptime = int(time.time() - start_time)
-    html = f"""
-    <html><head><title>Celestial Engine v1.3 Auto-Heal Quantum Core</title>
-    <meta http-equiv=refresh content=5>
-    <style>
-        body {{
-            background-color: #000;
-            color: #0f0;
-            font-family: monospace;
-            text-align: center;
-        }}
-    </style></head>
-    <body>
-    <h2>🩵 Celestial Engine v1.3 Auto-Heal Quantum Core 🩵</h2>
-    <p>Alpha: {energy[alpha]:.3f}</p>
-    <p>Beta: {energy[beta]:.3f}</p>
-    <p>Gamma: {energy[gamma]:.3f}</p>
-    <p>Entropy: {entropy:.3f}</p>
-    <p>Status: {"Healing..." if healing else "Stable"}</p>
-    <p>Uptime: {uptime}s</p>
-    <p>(Auto-refresh mỗi 5 giây)</p>
-    </body></html>
-    """
+    html = (
+        "<html><head><title>Celestial Engine v1.3 Auto-Heal Quantum Core</title>"
+        "<meta http-equiv=refresh content=5>"
+        "<style>body {background-color:#000;color:#0f0;font-family:monospace;text-align:center;}</style></head><body>"
+        "<h2>🩵 Celestial Engine v1.3 Auto-Heal Quantum Core 🩵</h2>"
+        f"<p>Alpha: {energy[alpha]:.3f}</p>"
+        f"<p>Beta: {energy[beta]:.3f}</p>"
+        f"<p>Gamma: {energy[gamma]:.3f}</p>"
+        f"<p>Entropy: {entropy:.3f}</p>"
+        f"<p>Status: {Healing... if healing else Stable}</p>"
+        f"<p>Uptime: {uptime}s</p>"
+        "<p>(Auto-refresh mỗi 5 giây)</p></body></html>"
+    )
     return HTMLResponse(content=html)
