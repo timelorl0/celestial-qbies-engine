@@ -37,7 +37,7 @@ def dashboard():
         f"<p>Beta: {energy[beta]:.3f}</p>"
         f"<p>Gamma: {energy[gamma]:.3f}</p>"
         f"<p>Entropy: {entropy:.3f}</p>"
-        f"<p>Status: {Healing... if healing else Stable}</p>"
+        f"<p>Status: {'Healing...' if healing else 'Stable'}</p>"
         f"<p>Uptime: {uptime}s</p>"
         "<p>(Auto-refresh mỗi 5 giây)</p></body></html>"
     )
