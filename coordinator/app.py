@@ -1,20 +1,8 @@
 from fastapi import FastAPI, Request
-from coordinator.api import system_api
-app.include_router(system_api.router)
-from api import system_api
-app.include_router(system_api.router)
-from api import system_api
-app.include_router(system_api.router)
 from fastapi.responses import HTMLResponse, JSONResponse
 import time, math, threading, json, os, requests, random
 
 app = FastAPI(title='Celestial Engine v1.5 Multi-Node Network Core')
-from coordinator.api import system_api
-app.include_router(system_api.router)
-from api import system_api
-app.include_router(system_api.router)
-from api import system_api
-app.include_router(system_api.router)
 
 DATA_PATH = 'coordinator/data/memory.qbies'
 NODES_PATH = 'coordinator/data/nodes.qbies'
@@ -116,3 +104,6 @@ async def register_node(req: Request):
 
 threading.Thread(target=quantum_core, daemon=True).start()
 threading.Thread(target=quantum_network, daemon=True).start()
+
+from coordinator.api import system_api
+app.include_router(system_api.router)
