@@ -107,3 +107,6 @@ threading.Thread(target=quantum_network, daemon=True).start()
 
 from coordinator.api import system_api
 app.include_router(system_api.router)
+
+from coordinator.api import nodes_api
+app.include_router(nodes_api.router)
