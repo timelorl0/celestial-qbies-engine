@@ -1,8 +1,8 @@
 #!/bin/bash
-echo "🚀 Đang khởi tạo SystemAPI Celestial Engine..."
+echo "🔧 Kiểm tra SystemAPI..."
 python3 - <<PY
 from coordinator.api import system_api
-print("✅ Kiểm tra route:", system_api.router.routes[0].path)
+print("✅ Route:", [r.path for r in system_api.router.routes])
 PY
-echo "Hoàn tất — hãy commit và deploy lại để kích hoạt API."
+echo "Hoàn tất — commit & redeploy nhé."
 

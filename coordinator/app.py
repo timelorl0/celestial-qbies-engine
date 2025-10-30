@@ -1,4 +1,6 @@
 from fastapi import FastAPI, Request
+from coordinator.api import system_api
+app.include_router(system_api.router)
 from api import system_api
 app.include_router(system_api.router)
 from api import system_api
@@ -7,6 +9,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 import time, math, threading, json, os, requests, random
 
 app = FastAPI(title='Celestial Engine v1.5 Multi-Node Network Core')
+from coordinator.api import system_api
+app.include_router(system_api.router)
 from api import system_api
 app.include_router(system_api.router)
 from api import system_api
