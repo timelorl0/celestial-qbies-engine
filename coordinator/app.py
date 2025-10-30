@@ -1,8 +1,16 @@
 from fastapi import FastAPI, Request
+from api import system_api
+app.include_router(system_api.router)
+from api import system_api
+app.include_router(system_api.router)
 from fastapi.responses import HTMLResponse, JSONResponse
 import time, math, threading, json, os, requests, random
 
 app = FastAPI(title='Celestial Engine v1.5 Multi-Node Network Core')
+from api import system_api
+app.include_router(system_api.router)
+from api import system_api
+app.include_router(system_api.router)
 
 DATA_PATH = 'coordinator/data/memory.qbies'
 NODES_PATH = 'coordinator/data/nodes.qbies'
