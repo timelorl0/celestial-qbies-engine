@@ -1,86 +1,130 @@
-# Celestial QBIES Engine – Unified Node + Thiên Đạo
-from flask import Flask, jsonify, request
+# coordinator/app.py
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+import time, math, threading, json, os, requests, random
 from datetime import datetime
-import os, random, math, time
+from typing import Any
 
-# Import các module hiện có
-from coordinator.app import app as coordinator_app
-from dao.thien_dao import thien_dao
+# ========================== CUSTOM JSON ENCODER ==========================
+# Tự động chuyển mọi datetime thành chuỗi ISO 8601 để tránh lỗi serialize
+class SafeJSONResponse(JSONResponse):
+    def render(self, content: Any) -> bytes:
+        def default(obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat() + "Z"
+            return str(obj)
+        return json.dumps(content, default=default, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
-# Tạo Flask app chính
-app = Flask(__name__)
+# ========================== MAIN APP SETUP ==========================
+app = FastAPI(title='Celestial Engine v1.5 Multi-Node Network Core')
 
-# ========== CORE ENGINE META ==========
-ENGINE_VERSION = "Celestial Engine v1.5"
-ENGINE_STATUS = "stable"
-ENGINE_START = datetime.utcnow()
+DATA_PATH = 'coordinator/data/memory.qbies'
+NODES_PATH = 'coordinator/data/nodes.qbies'
+os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
 
-# ========== ROUTES ==========
+ENGINE_ID = f'CE-{random.randint(1000,9999)}'
+BASE_URL = 'https://celestial-qbies-engine.onrender.com'
 
-@app.route("/")
-def index():
-    """Trang chào mừng"""
-    return jsonify({
-        "engine": ENGINE_VERSION,
-        "status": ENGINE_STATUS,
-        "uptime": str(datetime.utcnow() - ENGINE_START),
-        "message": "Celestial QBIES Engine online and harmonized with Thiên Đạo."
-    })
+def load_json(path, default):
+    try:
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return default
 
-# ----- Hệ thống năng lượng tổng -----
-@app.route("/api/system/total_energy", methods=["GET"])
-def total_energy():
-    """Tính năng lượng tổng hợp"""
-    uptime = str(datetime.utcnow() - ENGINE_START)
-    data = {
-        "engine": ENGINE_VERSION,
-        "status": ENGINE_STATUS,
-        "energy_total": round(thien_dao.energy, 3),
-        "uptime": uptime,
-        "nodes": 1
-    }
-    return jsonify(data)
+energy = load_json(DATA_PATH, {'alpha': 12.0, 'beta': 6.0, 'gamma': 3.0})
+entropy = energy.get('entropy', 0.0)
+nodes = load_json(NODES_PATH, [BASE_URL])
 
-# ----- Thiên Đạo (Unified Field) -----
-@app.route("/api/system/thien_dao", methods=["GET"])
-def get_thien_dao():
-    """Trả về hiện trạng Thiên Đạo"""
-    return jsonify(thien_dao.manifest())
+healing = False
+start_time = time.time()
 
-# ----- Pulse API (nếu cần Node khác kết nối) -----
-@app.route("/api/nodes/pulse", methods=["POST"])
-def node_pulse():
-    """Nhận Pulse từ các Node phụ"""
-    data = request.get_json(force=True)
-    node = data.get("node")
-    energy = data.get("energy")
-    status = data.get("status")
-    print(f"[Pulse] Node {node} → {status}, Energy={energy}")
-    thien_dao.observe([data])  # Cập nhật trạng thái Thiên Đạo
-    return jsonify({"result": "ok", "node": node, "energy": energy})
+def save_state():
+    with open(DATA_PATH, 'w') as f:
+        json.dump({'energy': energy, 'entropy': entropy}, f)
+    with open(NODES_PATH, 'w') as f:
+        json.dump(nodes, f)
 
-# ========== ENDPOINT TEST ==========
-@app.route("/dashboard", methods=["GET"])
+# ========================== BACKGROUND CORE ==========================
+def quantum_core():
+    global energy, entropy, healing
+    tick = 0
+    while True:
+        total = sum(energy.values())
+        entropy = round((math.sin(time.time() / 20) + 1) * total / 200, 3)
+        healing = entropy > 0.15
+        for k in energy:
+            energy[k] = round(max(0, energy[k] - (entropy * (0.03 if healing else 0.01))), 3)
+        tick += 1
+        if tick >= 60:
+            save_state()
+            tick = 0
+        time.sleep(1)
+
+def quantum_network():
+    global energy, entropy, nodes
+    while True:
+        for node in nodes:
+            if node == BASE_URL:
+                continue
+            try:
+                res = requests.get(f'{node}/sync-data', timeout=5)
+                if res.status_code == 200:
+                    data = res.json()
+                    for k in energy:
+                        energy[k] = round((energy[k] + data['energy'][k]) / 2, 3)
+                    entropy = round((entropy + data['entropy']) / 2, 3)
+            except:
+                pass
+        time.sleep(10)
+
+# ========================== FRONTEND DASHBOARD ==========================
+@app.get('/dashboard', response_class=HTMLResponse)
 def dashboard():
-    """Giao diện mini hiển thị trạng thái"""
-    uptime = str(datetime.utcnow() - ENGINE_START)
-    return f"""
-    <pre style='color:lime; background:black; padding:20px;'>
-    🌌 {ENGINE_VERSION} – Multi-Node Network
-    =========================================
-    Status: {ENGINE_STATUS}
-    Uptime: {uptime}
-    Energy: {round(thien_dao.energy, 4)}
-    State : {thien_dao.state}
-    Node  : {thien_dao.node_id}
-    =========================================
-    Pulse URL: /api/nodes/pulse
-    Thiên Đạo: /api/system/thien_dao
-    </pre>
-    """
+    uptime = int(time.time() - start_time)
+    status = 'Healing...' if healing else 'Stable'
+    node_list = '<br>'.join(nodes)
+    html = f'''
+    <html><head><title>Celestial Engine v1.5 Multi-Node Network</title></head>
+    <body style='background:black;color:lime;font-family:monospace'>
+    <h2>🌐 Celestial Engine v1.5 Multi-Node Network</h2>
+    <p><b>Engine ID:</b> {ENGINE_ID}</p>
+    <p>Alpha: {energy['alpha']:.3f}</p>
+    <p>Beta: {energy['beta']:.3f}</p>
+    <p>Gamma: {energy['gamma']:.3f}</p>
+    <p>Entropy: {entropy:.3f}</p>
+    <p>Status: {status}</p>
+    <p>Uptime: {uptime}s</p>
+    <p>(Nodes connected: {len(nodes)})</p>
+    <p>{node_list}</p>
+    <p>(Quantum Pulse mỗi 10s – Auto-save mỗi 60s)</p>
+    <script>setTimeout(()=>{{location.reload()}},5000)</script>
+    </body></html>
+    '''
+    return HTMLResponse(html)
 
-# ========== MAIN ==========
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    print(f"[Celestial Engine] 🚀 Running on port {port}")
-    app.run(host="0.0.0.0", port=port)
+# ========================== API CORE ==========================
+@app.get('/sync-data', response_class=SafeJSONResponse)
+def sync_data():
+    return {'engine_id': ENGINE_ID, 'energy': energy, 'entropy': entropy}
+
+@app.post('/register-node', response_class=SafeJSONResponse)
+async def register_node(req: Request):
+    data = await req.json()
+    node_url = data.get('url')
+    if node_url and node_url not in nodes:
+        nodes.append(node_url)
+        save_state()
+    return {'registered': nodes}
+
+# ========================== INCLUDE ROUTERS ==========================
+threading.Thread(target=quantum_core, daemon=True).start()
+threading.Thread(target=quantum_network, daemon=True).start()
+
+from coordinator.api import system_api
+app.include_router(system_api.router)
+
+from coordinator.api import nodes_api
+app.include_router(nodes_api.router)
