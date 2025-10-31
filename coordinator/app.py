@@ -1,7 +1,10 @@
+# Celestial Engine v1.5 – Multi-Node Network Core (Unified with Thiên Đạo)
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 import time, math, threading, json, os, requests, random
+from datetime import datetime
 
+# ===== Core Init =====
 app = FastAPI(title='Celestial Engine v1.5 Multi-Node Network Core')
 
 DATA_PATH = 'coordinator/data/memory.qbies'
@@ -10,7 +13,10 @@ os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
 
 ENGINE_ID = f'CE-{random.randint(1000,9999)}'
 BASE_URL = 'https://celestial-qbies-engine.onrender.com'
+ENGINE_STATUS = "stable"
+ENGINE_START = datetime.utcnow()
 
+# ===== Data Management =====
 def load_json(path, default):
     try:
         if os.path.exists(path):
@@ -33,6 +39,7 @@ def save_state():
     with open(NODES_PATH, 'w') as f:
         json.dump(nodes, f)
 
+# ===== Core Quantum Threads =====
 def quantum_core():
     global energy, entropy, healing
     tick = 0
@@ -65,15 +72,27 @@ def quantum_network():
                 pass
         time.sleep(10)
 
+# ===== Import Routers =====
+from coordinator.api import system_api
+app.include_router(system_api.router)
+
+from coordinator.api import nodes_api
+app.include_router(nodes_api.router)
+
+# ===== Import Thiên Đạo =====
+from coordinator.dao.thien_dao import thien_dao
+
+# ===== ROUTES =====
+
 @app.get('/dashboard', response_class=HTMLResponse)
 def dashboard():
     uptime = int(time.time() - start_time)
     status = 'Healing...' if healing else 'Stable'
     node_list = '<br>'.join(nodes)
-    html = f'''
+    html = f"""
     <html><head><title>Celestial Engine v1.5 Multi-Node Network</title></head>
     <body style='background:black;color:lime;font-family:monospace'>
-    <h2>🌐 Celestial Engine v1.5 Multi-Node Network</h2>
+    <h2>🌌 Celestial Engine v1.5 Multi-Node Network</h2>
     <p><b>Engine ID:</b> {ENGINE_ID}</p>
     <p>Alpha: {energy['alpha']:.3f}</p>
     <p>Beta: {energy['beta']:.3f}</p>
@@ -83,10 +102,13 @@ def dashboard():
     <p>Uptime: {uptime}s</p>
     <p>(Nodes connected: {len(nodes)})</p>
     <p>{node_list}</p>
+    <hr>
+    <p><b>Thiên Đạo:</b> {thien_dao.state} | Energy field = {round(thien_dao.energy, 4)}</p>
+    <p><a href='/api/system/thien_dao' style='color:cyan'>→ View /api/system/thien_dao</a></p>
     <p>(Quantum Pulse mỗi 10s – Auto-save mỗi 60s)</p>
     <script>setTimeout(()=>{{location.reload()}},5000)</script>
     </body></html>
-    '''
+    """
     return HTMLResponse(html)
 
 @app.get('/sync-data')
@@ -102,11 +124,27 @@ async def register_node(req: Request):
         save_state()
     return JSONResponse({'registered': nodes})
 
+# ===== NEW ROUTE: Thiên Đạo =====
+@app.get('/api/system/thien_dao')
+def get_thien_dao():
+    """API Thiên Đạo – Trả về hiện trạng năng lượng"""
+    return JSONResponse(thien_dao.manifest())
+
+@app.get('/api/system/total_energy')
+def total_energy():
+    """API tổng năng lượng"""
+    uptime = str(datetime.utcnow() - ENGINE_START)
+    data = {
+        "engine": "Celestial Engine v1.5",
+        "status": ENGINE_STATUS,
+        "energy_total": round(thien_dao.energy, 4),
+        "uptime": uptime,
+        "nodes": len(nodes)
+    }
+    return JSONResponse(data)
+
+# ===== START THREADS =====
 threading.Thread(target=quantum_core, daemon=True).start()
 threading.Thread(target=quantum_network, daemon=True).start()
 
-from coordinator.api import system_api
-app.include_router(system_api.router)
-
-from coordinator.api import nodes_api
-app.include_router(nodes_api.router)
+print(f"[Celestial Engine] 🌠 Boot complete | ID={ENGINE_ID}")
