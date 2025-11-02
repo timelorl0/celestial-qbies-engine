@@ -7,6 +7,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 import time, math, threading, json, os, requests, random
 from datetime import datetime
+from pydantic import BaseModel
+from typing import Optional
 
 # ===== Core Init =====
 app = FastAPI(title='Celestial Engine v1.6 – Unified Core')
@@ -48,11 +50,12 @@ def quantum_core():
     global energy, entropy, healing
     tick = 0
     while True:
-        total = sum(energy.values())
-        entropy = round((math.sin(time.time() / 20) + 1) * total / 200, 3)
+        total = sum(energy.values()) if isinstance(energy, dict) else 0
+        entropy = round((math.sin(time.time() / 20) + 1) * total / 200, 3) if total else 0.0
         healing = entropy > 0.15
-        for k in energy:
-            energy[k] = round(max(0, energy[k] - (entropy * (0.03 if healing else 0.01))), 3)
+        if isinstance(energy, dict):
+            for k in energy:
+                energy[k] = round(max(0, energy[k] - (entropy * (0.03 if healing else 0.01))), 3)
         tick += 1
         if tick >= 60:
             save_state()
@@ -69,18 +72,28 @@ def quantum_network():
                 res = requests.get(f'{node}/sync-data', timeout=5)
                 if res.status_code == 200:
                     data = res.json()
-                    for k in energy:
-                        energy[k] = round((energy[k] + data['energy'][k]) / 2, 3)
-                    entropy = round((entropy + data['entropy']) / 2, 3)
+                    if 'energy' in data and isinstance(data['energy'], dict):
+                        for k in energy:
+                            energy[k] = round((energy[k] + data['energy'].get(k, energy[k])) / 2, 3)
+                        entropy = round((entropy + data.get('entropy', entropy)) / 2, 3)
             except:
                 pass
         time.sleep(10)
 
-# ===== Import Routers =====
-from coordinator.api import system_api
-app.include_router(system_api.router)
-from coordinator.api import nodes_api
-app.include_router(nodes_api.router)
+# ===== Import Routers (nếu có) =====
+# nếu bạn có các module router riêng, giữ nguyên; nếu không có, các dòng này có thể bỏ
+try:
+    from coordinator.api import system_api
+    app.include_router(system_api.router)
+except Exception:
+    # không bắt buộc có system_api, bỏ qua nếu không tồn tại
+    pass
+
+try:
+    from coordinator.api import nodes_api
+    app.include_router(nodes_api.router)
+except Exception:
+    pass
 
 # =============================================================
 # ☯️ THIÊN ĐẠO TOÀN QUYỀN – HÒA NHẬP
@@ -119,7 +132,10 @@ async def process_event(req: Request):
 
     if ev.get("type") in ("tick", "tu_luyen"):
         gain = ev.get("energy", random.uniform(0.8, 1.4))
-        p["energy"] += gain
+        try:
+            p["energy"] += float(gain)
+        except:
+            p["energy"] += random.uniform(0.8, 1.4)
         p["karma"] = ev.get("karma", p["karma"])
 
     realm = get_realm_for_energy(p["energy"])
@@ -182,6 +198,7 @@ async def plugin_ping(req: Request):
     LINK_STATUS["last_ping"] = time.strftime("%H:%M:%S")
     LINK_STATUS["plugin_version"] = data.get("version", "unknown")
     LINK_STATUS["player_count"] = data.get("players", 0)
+    # Also update bridge status if plugin sends bridge info
     return {"ok": True, "msg": "Ping received", "time": LINK_STATUS["last_ping"]}
 
 @app.post("/plugin/data")
@@ -198,15 +215,62 @@ def watchdog():
     while True:
         if LINK_STATUS["last_ping"]:
             try:
-                t = time.strptime(LINK_STATUS["last_ping"], "%H:%M:%S")
-                delta = time.time() - time.mktime(t)
-                if delta > 10:
+                # last_ping stored as "HH:MM:SS" string
+                t_struct = time.strptime(LINK_STATUS["last_ping"], "%H:%M:%S")
+                last_seconds = time.mktime(t_struct)
+                # convert to now-day seconds by using today's date
+                now = time.localtime()
+                today_seconds = time.mktime((now.tm_year, now.tm_mon, now.tm_mday,
+                                            t_struct.tm_hour, t_struct.tm_min, t_struct.tm_sec,
+                                            now.tm_wday, now.tm_yday, now.tm_isdst))
+                delta = time.time() - today_seconds
+                if delta > 15:
                     LINK_STATUS["minecraft_connected"] = False
-            except:
-                pass
+            except Exception:
+                # if parsing fails, mark disconnected
+                LINK_STATUS["minecraft_connected"] = False
         time.sleep(5)
 
 threading.Thread(target=watchdog, daemon=True).start()
+
+# =============================================================
+# 🧠 Bridge API (mới) - để plugin gọi /api/bridge_status
+# =============================================================
+
+class BridgeStatusModel(BaseModel):
+    plugin: Optional[str] = "QCoreBridge"
+    node: Optional[str] = "Unknown"
+    status: Optional[str] = "disconnected"   # "connected" / "disconnected"
+    info: Optional[str] = "Chưa nhận tín hiệu"
+    players: Optional[int] = 0
+    timestamp: Optional[float] = None
+
+# trạng thái cầu nối mặc định
+CURRENT_BRIDGE = BridgeStatusModel(timestamp=time.time())
+
+@app.post("/api/bridge_status")
+async def update_bridge_status(status: BridgeStatusModel):
+    global CURRENT_BRIDGE, LINK_STATUS
+    CURRENT_BRIDGE = status
+    # cập nhật LINK_STATUS theo bridge status
+    LINK_STATUS["minecraft_connected"] = (status.status == "connected")
+    LINK_STATUS["plugin_version"] = status.plugin
+    LINK_STATUS["player_count"] = status.players or 0
+    LINK_STATUS["last_ping"] = time.strftime("%H:%M:%S")
+    print(f"[Thiên Đạo] ⚡ Bridge cập nhật: {status.status} ({status.info}) từ {status.node}")
+    return {"success": True, "bridge": CURRENT_BRIDGE.dict()}
+
+@app.get("/api/bridge_status")
+def get_bridge_status():
+    return CURRENT_BRIDGE.dict()
+
+# optional: small handshake endpoint plugin có thể gọi
+@app.post("/api/bridge_handshake")
+async def bridge_handshake(req: Request):
+    data = await req.json()
+    node = data.get("node", "unknown")
+    print(f"[Thiên Đạo] 🤝 Handshake từ node: {node}")
+    return {"ok": True, "message": "Handshake accepted", "node": node, "time": time.time()}
 
 # =============================================================
 # 🧩 DASHBOARD – HỢP NHẤT THIÊN ĐẠO
@@ -223,9 +287,9 @@ def dashboard():
     <body style='background:black;color:lime;font-family:monospace'>
     <h2>🌌 Celestial Engine v1.6 – Thiên Đạo Toàn Quyền</h2>
     <p><b>Engine ID:</b> {ENGINE_ID}</p>
-    <p>Alpha: {energy['alpha']:.3f}</p>
-    <p>Beta: {energy['beta']:.3f}</p>
-    <p>Gamma: {energy['gamma']:.3f}</p>
+    <p>Alpha: {energy.get('alpha',0):.3f}</p>
+    <p>Beta: {energy.get('beta',0):.3f}</p>
+    <p>Gamma: {energy.get('gamma',0):.3f}</p>
     <p>Entropy: {entropy:.3f}</p>
     <p>Status: {status}</p>
     <p>Uptime: {uptime}s</p>
@@ -238,11 +302,14 @@ def dashboard():
     <hr>
     <h3>🔗 QBiesLink Bridge</h3>
     <p>Trạng thái plugin: {mc_status}</p>
-    <p>Phiên bản: {LINK_STATUS['plugin_version']}</p>
-    <p>Người chơi online: {LINK_STATUS['player_count']}</p>
-    <p>Lần ping gần nhất: {LINK_STATUS['last_ping']}</p>
+    <p>Phiên bản: {LINK_STATUS.get('plugin_version')}</p>
+    <p>Người chơi online: {LINK_STATUS.get('player_count')}</p>
+    <p>Lần ping gần nhất: {LINK_STATUS.get('last_ping')}</p>
     <p><a href='/ping' style='color:cyan'>→ Ping Test</a></p>
-    <script>setTimeout(()=>{{location.reload()}},4000)</script>
+    <script>
+      // reload nhẹ, để dashboard không quá tải bạn có thể tăng lên 5s hoặc 10s
+      setTimeout(()=>{{location.reload()}},4000)
+    </script>
     </body></html>
     """
     return HTMLResponse(html)
