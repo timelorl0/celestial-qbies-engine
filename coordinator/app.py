@@ -5,7 +5,7 @@
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, HTMLResponse
-import os, json, time, threading, math, requests, base64
+import os, json, time, threading, math, requests, base64, subprocess
 from datetime import datetime
 
 app = FastAPI(title="Celestial Engine v2.0 – Thiên Đạo Toàn Quyền")
@@ -36,7 +36,10 @@ PATCH_QUEUE = []
 ENGINE_STATUS = {"connected": True, "entropy": 0.0, "sync_tick": 0}
 
 
-# ===== HÀM HỖ TRỢ =====
+# =============================================================
+# ⚙️ HÀM HỖ TRỢ
+# =============================================================
+
 def load_json(path, default):
     try:
         if os.path.exists(path):
@@ -155,6 +158,49 @@ def plugin_reload():
         return {"ok": True, "msg": "Reload requested"}
     except:
         return {"ok": False, "msg": "Minecraft unreachable"}
+
+
+# =============================================================
+# 🛠️ AUTO PATCH – THIÊN ĐẠO TỰ VÁ LỖI PLUGIN
+# =============================================================
+
+QCORE_PATH = r"C:\QCoreBridge\Thư mục mới\QCoreBridge"
+
+@app.post("/auto_patch")
+async def auto_patch(req: Request):
+    data = await req.json()
+    filename = data.get("filename")
+    code = data.get("code")
+
+    if not filename or not code:
+        return JSONResponse({"status": "error", "message": "Thiếu filename hoặc code"}, status_code=400)
+
+    try:
+        # Ghi đè file lỗi
+        file_path = os.path.join(QCORE_PATH, filename)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(code)
+
+        # Biên dịch lại plugin
+        build_cmd = (
+            f'cd "{QCORE_PATH}" && '
+            'rm -rf build QCoreBridge.jar && mkdir -p build && '
+            'javac --release 21 -encoding UTF-8 -cp "lib/*" -d build $(find src -name "*.java") && '
+            'cp plugin.yml build/ && (cd build && jar cf ../QCoreBridge.jar .)'
+        )
+        subprocess.run(build_cmd, shell=True, check=True)
+
+        # Reload plugin
+        reload_cmd = 'curl -X POST http://localhost:25575/command -d "plugman reload QCoreBridge"'
+        subprocess.run(reload_cmd, shell=True)
+
+        return {"status": "success", "message": "✅ Thiên Đạo đã vá và reload QCoreBridge thành công."}
+
+    except subprocess.CalledProcessError as e:
+        return {"status": "error", "message": f"Lỗi build: {str(e)}"}, 500
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
 
 
 # =============================================================
