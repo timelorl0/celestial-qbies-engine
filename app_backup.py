@@ -1,23 +1,18 @@
 # ===============================================
 # ⚡ THIÊN ĐẠO TOÀN QUYỀN v1.0 (Render Engine)
 # -----------------------------------------------
-# Hòa nhập toàn bộ vào hệ thống Celestial QBIES gốc.
-# Xử lý: tu luyện - đột phá - hiển thị - linh khí - âm thanh - tương tác.
-# Liên kết plugin QCoreBridge (Minecraft).
+# Xử lý toàn bộ quá trình: tu luyện - đột phá - linh khí - hiển thị.
+# Kết nối plugin QCoreBridge (Minecraft) qua HTTP.
 # -----------------------------------------------
 # © Celestial QBIES Universe Engine
 # ===============================================
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
-import math, time, random, os
+import math, time
 
-# Nếu app đã tồn tại trong hệ thống QBIES cũ -> tái sử dụng
-try:
-    app
-except NameError:
-    app = FastAPI(title="Celestial QBIES Unified Engine")
+app = FastAPI(title="Thiên Đạo Toàn Quyền Engine")
 
 # =====================================================
 # 🧬 MÔ HÌNH DỮ LIỆU
@@ -95,54 +90,52 @@ def process_event(ev: PlayerEvent):
 
     actions = []
 
-    # Cập nhật năng lượng và Karma
+    # Cập nhật năng lượng
     if ev.type in ("tick", "tu_luyen"):
-        gain = ev.energy or random.uniform(0.8, 1.4)
+        gain = ev.energy or 1.0
         p["energy"] += gain
         p["karma"] = ev.karma or p["karma"]
 
-    # Xác định cảnh giới hiện tại
     realm = get_realm_for_energy(p["energy"])
     p["realm_idx"] = next(i for i, r in enumerate(REALMS) if r["name"] == realm["name"])
 
-    # Hiển thị thanh linh khí (đè lên thanh kinh nghiệm)
+    # Gửi cập nhật thanh linh khí
     actions.append(make_action(
         "set_ui", name,
-        energy=round(p["energy"], 1),
+        energy=p["energy"],
         required=REALMS[min(p["realm_idx"] + 1, len(REALMS) - 1)]["req"],
         realm=realm["name"],
         color=realm["color"],
         place_over_exp=True
     ))
 
-    # Kiểm tra đột phá
+    # Khi đủ linh khí đột phá
     next_realm = REALMS[p["realm_idx"] + 1] if p["realm_idx"] + 1 < len(REALMS) else None
     if next_realm and p["energy"] >= next_realm["req"]:
         log(f"{name} đủ linh khí đột phá {next_realm['name']}")
-        # Reset năng lượng, nâng cấp cảnh giới, và tự động tiếp tục tu luyện
+        # Tự động đột phá
         p["energy"] = 0.0
         p["realm_idx"] += 1
         new_realm = REALMS[p["realm_idx"]]
         actions.append(make_action("title", name, title="⚡ ĐỘT PHÁ!", subtitle=new_realm["name"]))
-        actions.append(make_action("play_sound", name, sound="ENTITY_PLAYER_LEVELUP", volume=1.2, pitch=0.6))
-        actions.append(make_action("particle", name, type="TOTEM", count=60, offset=[0, 1.5, 0]))
-        # Sau khi đột phá, Thiên Đạo tự khởi động lại tu luyện
-        actions.append(make_action("auto_continue", name, realm=new_realm["name"]))
+        actions.append(make_action("play_sound", name, sound="ENTITY_ENDER_DRAGON_GROWL", volume=1.0, pitch=0.8))
+        actions.append(make_action("particle", name, type="DRAGON_BREATH", count=30, offset=[0, 2, 0]))
 
-    # Khi người chơi đang tu luyện
+    # Khi tu luyện, hiển thị linh khí xoay quanh
     if ev.type == "tu_luyen":
-        actions.append(make_action("particle", name, type="ENCHANTMENT_TABLE", count=16, offset=[0, 1.0, 0]))
-        actions.append(make_action("play_sound", name, sound="BLOCK_ENCHANTMENT_TABLE_USE", volume=0.7, pitch=1.2))
+        actions.append(make_action("particle", name, type="ENCHANTMENT_TABLE", count=12, offset=[0, 1.0, 0]))
+        actions.append(make_action("play_sound", name, sound="BLOCK_ENCHANTMENT_TABLE_USE", volume=0.8, pitch=1.2))
 
+    # Trả kết quả
     return ResponseModel(actions=actions)
 
-
 # =====================================================
-# ☯️ THIÊN ĐẠO HỎI Ý KIẾN
+# ☯️ THIÊN ĐẠO HỎI Ý KIẾN (ví dụ tương tác người chơi)
 # =====================================================
 
 @app.post("/ask")
 def ask_question(player: str, question: str):
+    """Thiên Đạo gửi câu hỏi xuống người chơi (chat)."""
     return {
         "actions": [
             make_action("message", player, text=f"§d[Thiên Đạo] §f{question}").dict()
@@ -155,15 +148,4 @@ def ask_question(player: str, question: str):
 
 @app.get("/ping")
 def ping():
-    return {"ok": True, "time": time.time(), "realms": len(REALMS), "players": len(PLAYER_STORE)}
-
-
-# =====================================================
-# 🧠 GIỮ HỆ THỐNG QBIES CŨ HOẠT ĐỘNG
-# =====================================================
-# Giữ nguyên các route, module và nền tảng QBIES gốc
-# Nếu phía dưới file bạn có import / app.include_router(...) thì không xoá
-# Chúng sẽ tự động đồng bộ cùng Thiên Đạo
-# =====================================================
-
-# (Các phần cũ của bạn sẽ được giữ nguyên ở đây)
+    return {"ok": True, "time": time.time(), "realms": len(REALMS)}
