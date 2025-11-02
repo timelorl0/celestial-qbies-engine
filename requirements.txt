@@ -5,3 +5,4 @@ zstandard
 cryptography
 blake3
 requests
+flask

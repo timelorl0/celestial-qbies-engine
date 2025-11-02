@@ -1,130 +1,102 @@
-# coordinator/app.py
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-import time, math, threading, json, os, requests, random
+# =============================================
+#  Celestial QBIES Engine – Render Flask API
+#  Phiên bản mở rộng tương thích QCoreBridge
+#  Tác giả: Celestial Engine Dev Team
+#  Cập nhật: 2025-11-02
+# =============================================
+
+from flask import Flask, jsonify, request
 from datetime import datetime
-from typing import Any
+import random
 
-# ========================== CUSTOM JSON ENCODER ==========================
-# Tự động chuyển mọi datetime thành chuỗi ISO 8601 để tránh lỗi serialize
-class SafeJSONResponse(JSONResponse):
-    def render(self, content: Any) -> bytes:
-        def default(obj):
-            if isinstance(obj, datetime):
-                return obj.isoformat() + "Z"
-            return str(obj)
-        return json.dumps(content, default=default, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+app = Flask(__name__)
 
-# ========================== MAIN APP SETUP ==========================
-app = FastAPI(title='Celestial Engine v1.5 Multi-Node Network Core')
+# =========================================================
+# ⚙️ Thông tin hệ thống & heartbeat
+# =========================================================
+@app.route("/")
+def index():
+    return jsonify({
+        "service": "Celestial-QBIES-Engine",
+        "status": "✅ Online",
+        "time": datetime.utcnow().isoformat() + "Z"
+    })
 
-DATA_PATH = 'coordinator/data/memory.qbies'
-NODES_PATH = 'coordinator/data/nodes.qbies'
-os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
 
-ENGINE_ID = f'CE-{random.randint(1000,9999)}'
-BASE_URL = 'https://celestial-qbies-engine.onrender.com'
+@app.route("/api/ping")
+def ping():
+    return jsonify({"pong": True, "time": datetime.utcnow().isoformat()})
 
-def load_json(path, default):
-    try:
-        if os.path.exists(path):
-            with open(path, 'r') as f:
-                return json.load(f)
-    except:
-        pass
-    return default
 
-energy = load_json(DATA_PATH, {'alpha': 12.0, 'beta': 6.0, 'gamma': 3.0})
-entropy = energy.get('entropy', 0.0)
-nodes = load_json(NODES_PATH, [BASE_URL])
+# =========================================================
+# 🌌 API cấu hình dành cho QCoreBridge (Minecraft Plugin)
+# =========================================================
+@app.route("/api/config")
+def api_config():
+    """
+    Endpoint chính để QCoreBridge tải cấu hình.
+    Plugin sẽ tự động đọc các giá trị này mỗi 30s.
+    """
 
-healing = False
-start_time = time.time()
+    # Bạn có thể mở rộng các thông số này dễ dàng
+    config = {
+        "show_particles": True,
+        "show_sound": True,
+        "realm_particle": "SOUL_FIRE_FLAME",
+        "realm_sound": "ENTITY_PLAYER_LEVELUP",
+        "realm_name": "Luyện Khí",
+        "realm_color": "GOLD",
+        "meditation_gain_rate": 1.5,
+        "breakthrough_requirement": 100.0,
+        "energy_multiplier": 1.0,
+        "enable_auto_update": True
+    }
 
-def save_state():
-    with open(DATA_PATH, 'w') as f:
-        json.dump({'energy': energy, 'entropy': entropy}, f)
-    with open(NODES_PATH, 'w') as f:
-        json.dump(nodes, f)
+    # Tùy chọn: Nếu plugin gửi player info, có thể phản hồi riêng cho người chơi
+    player_name = request.args.get("player")
+    if player_name:
+        config["message"] = f"Xin chào, {player_name}! Linh khí đang cộng hưởng với bạn."
+        config["personal_luck"] = round(random.uniform(0.8, 1.2), 3)
 
-# ========================== BACKGROUND CORE ==========================
-def quantum_core():
-    global energy, entropy, healing
-    tick = 0
-    while True:
-        total = sum(energy.values())
-        entropy = round((math.sin(time.time() / 20) + 1) * total / 200, 3)
-        healing = entropy > 0.15
-        for k in energy:
-            energy[k] = round(max(0, energy[k] - (entropy * (0.03 if healing else 0.01))), 3)
-        tick += 1
-        if tick >= 60:
-            save_state()
-            tick = 0
-        time.sleep(1)
+    return jsonify(config)
 
-def quantum_network():
-    global energy, entropy, nodes
-    while True:
-        for node in nodes:
-            if node == BASE_URL:
-                continue
-            try:
-                res = requests.get(f'{node}/sync-data', timeout=5)
-                if res.status_code == 200:
-                    data = res.json()
-                    for k in energy:
-                        energy[k] = round((energy[k] + data['energy'][k]) / 2, 3)
-                    entropy = round((entropy + data['entropy']) / 2, 3)
-            except:
-                pass
-        time.sleep(10)
 
-# ========================== FRONTEND DASHBOARD ==========================
-@app.get('/dashboard', response_class=HTMLResponse)
-def dashboard():
-    uptime = int(time.time() - start_time)
-    status = 'Healing...' if healing else 'Stable'
-    node_list = '<br>'.join(nodes)
-    html = f'''
-    <html><head><title>Celestial Engine v1.5 Multi-Node Network</title></head>
-    <body style='background:black;color:lime;font-family:monospace'>
-    <h2>🌐 Celestial Engine v1.5 Multi-Node Network</h2>
-    <p><b>Engine ID:</b> {ENGINE_ID}</p>
-    <p>Alpha: {energy['alpha']:.3f}</p>
-    <p>Beta: {energy['beta']:.3f}</p>
-    <p>Gamma: {energy['gamma']:.3f}</p>
-    <p>Entropy: {entropy:.3f}</p>
-    <p>Status: {status}</p>
-    <p>Uptime: {uptime}s</p>
-    <p>(Nodes connected: {len(nodes)})</p>
-    <p>{node_list}</p>
-    <p>(Quantum Pulse mỗi 10s – Auto-save mỗi 60s)</p>
-    <script>setTimeout(()=>{{location.reload()}},5000)</script>
-    </body></html>
-    '''
-    return HTMLResponse(html)
+# =========================================================
+# 🔮 API mô phỏng năng lượng vũ trụ / Chu Thiên
+# =========================================================
+@app.route("/api/energy")
+def api_energy():
+    """
+    Trả về năng lượng vũ trụ (dành cho dashboard hoặc game engine khác).
+    """
+    total_energy = round(random.uniform(80.0, 120.0), 3)
+    cosmic_state = random.choice(["Ổn định", "Dao động", "Cộng hưởng", "Bão linh khí"])
+    return jsonify({
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "total_energy": total_energy,
+        "cosmic_state": cosmic_state
+    })
 
-# ========================== API CORE ==========================
-@app.get('/sync-data', response_class=SafeJSONResponse)
-def sync_data():
-    return {'engine_id': ENGINE_ID, 'energy': energy, 'entropy': entropy}
 
-@app.post('/register-node', response_class=SafeJSONResponse)
-async def register_node(req: Request):
-    data = await req.json()
-    node_url = data.get('url')
-    if node_url and node_url not in nodes:
-        nodes.append(node_url)
-        save_state()
-    return {'registered': nodes}
+# =========================================================
+# 🧩 API phản hồi test dữ liệu (debug tiện lợi)
+# =========================================================
+@app.route("/api/test")
+def api_test():
+    """
+    Dành cho thử nghiệm nhanh — kiểm tra kết nối từ QCoreBridge.
+    """
+    q = request.args.get("q", "Không có dữ liệu")
+    return jsonify({
+        "received": q,
+        "status": "ok",
+        "time": datetime.utcnow().isoformat()
+    })
 
-# ========================== INCLUDE ROUTERS ==========================
-threading.Thread(target=quantum_core, daemon=True).start()
-threading.Thread(target=quantum_network, daemon=True).start()
 
-from coordinator.api import system_api
-app.include_router(system_api.router)
-
-from coordinator.api import nodes_api
-app.include_router(nodes_api.router)
+# =========================================================
+# 🚀 Chạy server Flask
+# =========================================================
+if __name__ == "__main__":
+    # Port cố định để plugin Minecraft gọi tới
+    app.run(host="0.0.0.0", port=10000)
