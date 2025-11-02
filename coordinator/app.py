@@ -165,6 +165,50 @@ def ping():
     })
 
 # =============================================================
+# 🔗 CẦU NỐI QBIESLINK – MINECRAFT BRIDGE
+# =============================================================
+
+LINK_STATUS = {
+    "minecraft_connected": False,
+    "last_ping": None,
+    "plugin_version": None,
+    "player_count": 0,
+}
+
+@app.post("/plugin/ping")
+async def plugin_ping(req: Request):
+    data = await req.json()
+    LINK_STATUS["minecraft_connected"] = True
+    LINK_STATUS["last_ping"] = time.strftime("%H:%M:%S")
+    LINK_STATUS["plugin_version"] = data.get("version", "unknown")
+    LINK_STATUS["player_count"] = data.get("players", 0)
+    return {"ok": True, "msg": "Ping received", "time": LINK_STATUS["last_ping"]}
+
+@app.post("/plugin/data")
+async def plugin_data(req: Request):
+    data = await req.json()
+    print("[QBiesLink] Data received:", data)
+    return {"ok": True, "status": "stored"}
+
+@app.get("/link_status")
+def link_status():
+    return LINK_STATUS
+
+def watchdog():
+    while True:
+        if LINK_STATUS["last_ping"]:
+            try:
+                t = time.strptime(LINK_STATUS["last_ping"], "%H:%M:%S")
+                delta = time.time() - time.mktime(t)
+                if delta > 10:
+                    LINK_STATUS["minecraft_connected"] = False
+            except:
+                pass
+        time.sleep(5)
+
+threading.Thread(target=watchdog, daemon=True).start()
+
+# =============================================================
 # 🧩 DASHBOARD – HỢP NHẤT THIÊN ĐẠO
 # =============================================================
 
@@ -173,6 +217,7 @@ def dashboard():
     uptime = int(time.time() - start_time)
     status = 'Healing...' if healing else 'Stable'
     node_list = '<br>'.join(nodes)
+    mc_status = '🟢 Connected' if LINK_STATUS['minecraft_connected'] else '🔴 Disconnected'
     html = f"""
     <html><head><title>Celestial Engine v1.6 Unified</title></head>
     <body style='background:black;color:lime;font-family:monospace'>
@@ -190,10 +235,14 @@ def dashboard():
     <h3>⚡ Thiên Đạo – Realms & Energy</h3>
     <p>Người chơi đang được giám sát: {len(PLAYER_STORE)}</p>
     <p>Hiện có {len(REALMS)} cảnh giới được kích hoạt</p>
-    <p><a href='/ping' style='color:cyan'>→ Ping Test</a> |
-       <a href='/process_event' style='color:orange'>→ API Thiên Đạo</a></p>
-    <p><i>(Quantum Pulse mỗi 10s – Auto-save mỗi 60s)</i></p>
-    <script>setTimeout(()=>{{location.reload()}},5000)</script>
+    <hr>
+    <h3>🔗 QBiesLink Bridge</h3>
+    <p>Trạng thái plugin: {mc_status}</p>
+    <p>Phiên bản: {LINK_STATUS['plugin_version']}</p>
+    <p>Người chơi online: {LINK_STATUS['player_count']}</p>
+    <p>Lần ping gần nhất: {LINK_STATUS['last_ping']}</p>
+    <p><a href='/ping' style='color:cyan'>→ Ping Test</a></p>
+    <script>setTimeout(()=>{{location.reload()}},4000)</script>
     </body></html>
     """
     return HTMLResponse(html)
