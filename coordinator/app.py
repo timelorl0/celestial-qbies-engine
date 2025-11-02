@@ -1,11 +1,15 @@
-# Celestial Engine v1.5 – Multi-Node Network Core (Unified with Thiên Đạo)
+# Celestial Engine v1.6 – Unified with Thiên Đạo Toàn Quyền 🌌
+# -------------------------------------------------------------
+# Toàn quyền vận hành: lượng tử – năng lượng – tu luyện – hiển thị
+# © Celestial QBIES Universe Engine
+
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 import time, math, threading, json, os, requests, random
 from datetime import datetime
 
 # ===== Core Init =====
-app = FastAPI(title='Celestial Engine v1.5 Multi-Node Network Core')
+app = FastAPI(title='Celestial Engine v1.6 – Unified Core')
 
 DATA_PATH = 'coordinator/data/memory.qbies'
 NODES_PATH = 'coordinator/data/nodes.qbies'
@@ -75,14 +79,94 @@ def quantum_network():
 # ===== Import Routers =====
 from coordinator.api import system_api
 app.include_router(system_api.router)
-
 from coordinator.api import nodes_api
 app.include_router(nodes_api.router)
 
-# ===== Import Thiên Đạo =====
-from coordinator.dao.thien_dao import thien_dao
+# =============================================================
+# ☯️ THIÊN ĐẠO TOÀN QUYỀN – HÒA NHẬP
+# =============================================================
 
-# ===== ROUTES =====
+REALMS = [
+    {"name": "Phàm Nhân", "req": 0, "color": "§7"},
+    {"name": "Nhập Môn", "req": 50, "color": "§9"},
+    {"name": "Trúc Cơ", "req": 200, "color": "§a"},
+    {"name": "Ngưng Tuyền", "req": 800, "color": "§e"},
+    {"name": "Kim Đan", "req": 2500, "color": "§6"},
+    {"name": "Nguyên Anh", "req": 6000, "color": "§d"},
+    {"name": "Hóa Thần", "req": 15000, "color": "§5"},
+]
+
+PLAYER_STORE = {}
+
+def get_realm_for_energy(e):
+    current = REALMS[0]
+    for r in REALMS:
+        if e >= r["req"]:
+            current = r
+        else:
+            break
+    return current
+
+def make_action(act, target, **params):
+    return {"action": act, "target": target, "params": params}
+
+@app.post("/process_event")
+async def process_event(req: Request):
+    ev = await req.json()
+    name = ev.get("player", "Unknown")
+    p = PLAYER_STORE.setdefault(name, {"energy": 0.0, "realm_idx": 0, "karma": 0.0, "auto": True})
+    actions = []
+
+    if ev.get("type") in ("tick", "tu_luyen"):
+        gain = ev.get("energy", random.uniform(0.8, 1.4))
+        p["energy"] += gain
+        p["karma"] = ev.get("karma", p["karma"])
+
+    realm = get_realm_for_energy(p["energy"])
+    p["realm_idx"] = next(i for i, r in enumerate(REALMS) if r["name"] == realm["name"])
+
+    actions.append(make_action(
+        "set_ui", name,
+        energy=round(p["energy"], 1),
+        required=REALMS[min(p["realm_idx"] + 1, len(REALMS) - 1)]["req"],
+        realm=realm["name"],
+        color=realm["color"],
+        place_over_exp=True
+    ))
+
+    next_realm = REALMS[p["realm_idx"] + 1] if p["realm_idx"] + 1 < len(REALMS) else None
+    if next_realm and p["energy"] >= next_realm["req"]:
+        p["energy"] = 0.0
+        p["realm_idx"] += 1
+        new_realm = REALMS[p["realm_idx"]]
+        actions += [
+            make_action("title", name, title="⚡ ĐỘT PHÁ!", subtitle=new_realm["name"]),
+            make_action("play_sound", name, sound="ENTITY_PLAYER_LEVELUP", volume=1.2, pitch=0.6),
+            make_action("particle", name, type="TOTEM", count=60, offset=[0, 1.5, 0]),
+            make_action("auto_continue", name, realm=new_realm["name"])
+        ]
+
+    if ev.get("type") == "tu_luyen":
+        actions += [
+            make_action("particle", name, type="ENCHANTMENT_TABLE", count=16, offset=[0, 1.0, 0]),
+            make_action("play_sound", name, sound="BLOCK_ENCHANTMENT_TABLE_USE", volume=0.7, pitch=1.2)
+        ]
+
+    return JSONResponse({"actions": actions, "realm": realm["name"], "energy": p["energy"]})
+
+@app.get("/ping")
+def ping():
+    return JSONResponse({
+        "ok": True,
+        "time": time.time(),
+        "realms": len(REALMS),
+        "players": len(PLAYER_STORE),
+        "entropy": entropy
+    })
+
+# =============================================================
+# 🧩 DASHBOARD – HỢP NHẤT THIÊN ĐẠO
+# =============================================================
 
 @app.get('/dashboard', response_class=HTMLResponse)
 def dashboard():
@@ -90,9 +174,9 @@ def dashboard():
     status = 'Healing...' if healing else 'Stable'
     node_list = '<br>'.join(nodes)
     html = f"""
-    <html><head><title>Celestial Engine v1.5 Multi-Node Network</title></head>
+    <html><head><title>Celestial Engine v1.6 Unified</title></head>
     <body style='background:black;color:lime;font-family:monospace'>
-    <h2>🌌 Celestial Engine v1.5 Multi-Node Network</h2>
+    <h2>🌌 Celestial Engine v1.6 – Thiên Đạo Toàn Quyền</h2>
     <p><b>Engine ID:</b> {ENGINE_ID}</p>
     <p>Alpha: {energy['alpha']:.3f}</p>
     <p>Beta: {energy['beta']:.3f}</p>
@@ -103,9 +187,12 @@ def dashboard():
     <p>(Nodes connected: {len(nodes)})</p>
     <p>{node_list}</p>
     <hr>
-    <p><b>Thiên Đạo:</b> {thien_dao.state} | Energy field = {round(thien_dao.energy, 4)}</p>
-    <p><a href='/api/system/thien_dao' style='color:cyan'>→ View /api/system/thien_dao</a></p>
-    <p>(Quantum Pulse mỗi 10s – Auto-save mỗi 60s)</p>
+    <h3>⚡ Thiên Đạo – Realms & Energy</h3>
+    <p>Người chơi đang được giám sát: {len(PLAYER_STORE)}</p>
+    <p>Hiện có {len(REALMS)} cảnh giới được kích hoạt</p>
+    <p><a href='/ping' style='color:cyan'>→ Ping Test</a> |
+       <a href='/process_event' style='color:orange'>→ API Thiên Đạo</a></p>
+    <p><i>(Quantum Pulse mỗi 10s – Auto-save mỗi 60s)</i></p>
     <script>setTimeout(()=>{{location.reload()}},5000)</script>
     </body></html>
     """
@@ -123,25 +210,6 @@ async def register_node(req: Request):
         nodes.append(node_url)
         save_state()
     return JSONResponse({'registered': nodes})
-
-# ===== NEW ROUTE: Thiên Đạo =====
-@app.get('/api/system/thien_dao')
-def get_thien_dao():
-    """API Thiên Đạo – Trả về hiện trạng năng lượng"""
-    return JSONResponse(thien_dao.manifest())
-
-@app.get('/api/system/total_energy')
-def total_energy():
-    """API tổng năng lượng"""
-    uptime = str(datetime.utcnow() - ENGINE_START)
-    data = {
-        "engine": "Celestial Engine v1.5",
-        "status": ENGINE_STATUS,
-        "energy_total": round(thien_dao.energy, 4),
-        "uptime": uptime,
-        "nodes": len(nodes)
-    }
-    return JSONResponse(data)
 
 # ===== START THREADS =====
 threading.Thread(target=quantum_core, daemon=True).start()
