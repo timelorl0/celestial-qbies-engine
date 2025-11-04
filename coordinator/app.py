@@ -1,30 +1,24 @@
 # =============================================================
-# 🌌 Celestial Engine v3.9.2 – Đại Chu Thiên Toàn Đạo Hợp Nhất + Gọi Thức Vĩnh Hằng (Ổn Định)
+# 🌌 Celestial Engine v4.0.1 – Watcher of Heaven
+# Thiên Đạo Gọi Thức + Discord Webhook Cảnh Báo Node
 # =============================================================
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 import os, json, time, threading, subprocess, shutil, requests, sys
 
-# --- Optional import fallback for yaml ---
+# ---- Thư viện phụ trợ ----
 try:
     import yaml
 except ImportError:
     os.system(f"{sys.executable} -m pip install pyyaml")
     import yaml
 
-# --- Import Celestial Modules ---
-try:
-    from coordinator.modules import loader, core_bridge, attributes, karma, willcore, knowledge_map
-    from coordinator.modules import alchemy, forge, talisman, formation, synchronizer, qbies_kernel
-except Exception as e:
-    print("[MODULE LOAD WARNING]", e)
-
 # =============================================================
 # ⚙️ CẤU HÌNH
 # =============================================================
 
-app = FastAPI(title="Celestial Engine v3.9.2 – Đại Chu Thiên Toàn Đạo Hợp Nhất")
+app = FastAPI(title="Celestial Engine v4.0.1 – Watcher of Heaven")
 
 BASE_PATH = os.getcwd()
 QCORE_PATH = os.path.join(BASE_PATH, "QCoreBridge")
@@ -36,8 +30,34 @@ ENGINE_STATUS = {"connected": True, "last_reload": "never", "state": "idle", "ti
 PLAYER_STATE = {}
 os.makedirs(os.path.dirname(PLAYER_DATA), exist_ok=True)
 
+# 🌐 Webhook Discord thật của bạn
+DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1435326612110442678/CU5xNQZP80scsiO1sY6XxH3md7nkttSqm26wm1pjO_eghfnOI_guJyH4VdejEqaVOyZw"
+
+RENDER_URL = os.getenv("RENDER_URL", "https://celestial-qbies-engine.onrender.com")
+FALIX_PING = "https://panel.falixnodes.net"
+
 # =============================================================
-# 📜 QUẢN LÝ NGƯỜI CHƠI
+# 📡 GỬI THÔNG BÁO DISCORD
+# =============================================================
+
+def send_discord_alert(title: str, message: str, color: int = 0x00FFAA, icon: str = "🌌"):
+    """Gửi thông báo lên Discord"""
+    try:
+        data = {
+            "username": "Celestial Watcher",
+            "embeds": [{
+                "title": f"{icon} {title}",
+                "description": message,
+                "color": color,
+                "footer": {"text": f"Thiên Đạo • {time.strftime('%H:%M:%S')}"}
+            }]
+        }
+        requests.post(DISCORD_WEBHOOK, json=data, timeout=5)
+    except Exception as e:
+        print("[DISCORD WARN]", e)
+
+# =============================================================
+# 🧬 QUẢN LÝ NGƯỜI CHƠI
 # =============================================================
 
 def load_players():
@@ -60,15 +80,6 @@ def save_players():
         print("[SAVE ERROR]", e)
 
 load_players()
-
-# =============================================================
-# 🔧 KHỞI TẠO MODULES
-# =============================================================
-
-try:
-    loader.init(app, config={"base_path": BASE_PATH})
-except Exception as e:
-    print("[LOADER INIT WARNING]", e)
 
 # =============================================================
 # 🔄 AUTO BUILD + RELOAD PLUGIN
@@ -97,28 +108,10 @@ def build_qcore():
         ensure_plugin_yml()
         build_dir = os.path.join(QCORE_PATH, "build")
         jar_path = os.path.join(QCORE_PATH, "QCoreBridge.jar")
-
-        if not os.path.exists(os.path.join(QCORE_PATH, "src")):
-            print("[BUILD WARN] ⚠ Không có mã nguồn Java để biên dịch (bỏ qua).")
-            return True
-
         if os.path.exists(jar_path): os.remove(jar_path)
         if os.path.exists(build_dir): shutil.rmtree(build_dir)
         os.makedirs(build_dir, exist_ok=True)
-
-        java_files = []
-        for r, _, fns in os.walk(os.path.join(QCORE_PATH, "src")):
-            for f in fns:
-                if f.endswith(".java"): java_files.append(os.path.join(r, f))
-        if not java_files:
-            print("[BUILD WARN] ⚠ Không tìm thấy file .java (bỏ qua build).")
-            return True
-
-        cmd = ["javac", "--release", "21", "-encoding", "UTF-8", "-cp", "lib/*", "-d", build_dir] + java_files
-        subprocess.run(" ".join(cmd), cwd=QCORE_PATH, shell=True, check=True)
-        shutil.copy2(os.path.join(QCORE_PATH, "plugin.yml"), build_dir)
-        subprocess.run(f'jar cf "{jar_path}" -C "{build_dir}" .', cwd=QCORE_PATH, shell=True, check=True)
-        print("[BUILD] ✅ QCoreBridge build complete")
+        print("[BUILD] ⚙️ Build QCore skipped (no Java on Render).")
         return True
     except Exception as e:
         print("[BUILD ERROR]", e)
@@ -129,6 +122,7 @@ def auto_reload():
     while True:
         time.sleep(90)
         try:
+            requests.get(RENDER_URL, timeout=4)
             ENGINE_STATUS["connected"] = True
         except:
             ENGINE_STATUS["connected"] = False
@@ -137,46 +131,57 @@ def auto_reload():
             print("[AUTO-RELOAD] ⚠ Lost connection, rebuilding...")
             build_qcore()
             ENGINE_STATUS["last_reload"] = time.strftime("%H:%M:%S")
+            send_discord_alert("Render tái sinh ⚙️", "Render node vừa được Thiên Đạo khởi động lại.", 0xFFFF00, "🌀")
 
         ENGINE_STATUS["ticks"] += 1
 
 threading.Thread(target=auto_reload, daemon=True).start()
 
 # =============================================================
-# 🌙 GỌI THỨC – AWAKENING LOOP
+# 🌙 GỌI THỨC – WATCHER LOOP
 # =============================================================
 
-RENDER_URL = os.getenv("RENDER_URL", "https://celestial-qbies-engine.onrender.com")
-FALIX_PING = "https://panel.falixnodes.net"  # fallback
-
 def awaken_cycle():
+    last_render_alive = True
+    last_falix_alive = True
+
     while True:
         try:
-            # Ping Render để giữ sống container
+            # --- Ping Render ---
             try:
                 requests.get(f"{RENDER_URL}/", timeout=5)
+                if not last_render_alive:
+                    send_discord_alert("Render tỉnh lại 🌈", "Render node đã hồi sinh và đang hoạt động.", 0x00FFAA)
+                last_render_alive = True
                 print("[AWAKEN] Render self-ping ✅")
             except Exception as e:
-                print("[AWAKEN] Render ping failed ⚠", e)
+                print("[AWAKEN] Render unreachable ⚠", e)
+                if last_render_alive:
+                    send_discord_alert("Render rơi vào ngủ sâu 💤", "Render node mất phản hồi ping.", 0xFF8800)
+                last_render_alive = False
 
-            # Ping Falix qua HTTP thay vì localhost
+            # --- Ping Falix ---
             try:
                 r = requests.get(FALIX_PING, timeout=5)
                 if r.status_code == 200:
+                    if not last_falix_alive:
+                        send_discord_alert("Falix hồi sinh 🔥", "FalixNodes đã tỉnh giấc và đang chạy ổn định.", 0x00FFAA)
+                    last_falix_alive = True
                     print("[AWAKEN] Falix heartbeat ✅")
                 else:
-                    print("[AWAKEN] Falix ping weak ⚠", r.status_code)
+                    print("[AWAKEN] Falix weak ⚠")
+                    if last_falix_alive:
+                        send_discord_alert("Falix yếu sinh khí ⚠", f"HTTP {r.status_code} – phản hồi không ổn định.", 0xFFAA00)
+                    last_falix_alive = False
             except Exception as e:
                 print("[AWAKEN] Falix unreachable ⚠", e)
+                if last_falix_alive:
+                    send_discord_alert("Falix hôn mê 💤", "FalixNodes mất kết nối, Thiên Đạo đang quan sát.", 0xFF0000)
+                last_falix_alive = False
 
-            # Duy trì “ý chí Thiên Đạo”
-            try:
-                willcore.add_will("ThiênĐạo", +1)
-                karma.add_karma("ThiênĐạo", +0.1, "Duy trì thức tỉnh vũ trụ")
-            except Exception as e:
-                print("[AWAKEN META] ⚠", e)
-
+            ENGINE_STATUS["ticks"] += 1
             time.sleep(180)
+
         except Exception as e:
             print("[AWAKEN ERROR]", e)
             time.sleep(60)
@@ -184,19 +189,19 @@ def awaken_cycle():
 threading.Thread(target=awaken_cycle, daemon=True).start()
 
 # =============================================================
-# 🧩 API
+# 🧩 DASHBOARD
 # =============================================================
 
 @app.get("/")
 def index():
-    return {"engine": "Celestial Engine v3.9.2", "uptime": int(time.time() - START_TIME)}
+    return {"engine": "Celestial Engine v4.0.1 – Watcher of Heaven", "uptime": int(time.time() - START_TIME)}
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
     uptime = int(time.time() - START_TIME)
     html = f"""
     <html><body style='background:black;color:lime;font-family:monospace'>
-    <h2>🌌 Celestial Engine v3.9.2 – Gọi Thức Vĩnh Hằng</h2>
+    <h2>🌌 Celestial Engine v4.0.1 – Watcher of Heaven</h2>
     <p>ID: {ENGINE_ID} | Uptime: {uptime}s | Ticks: {ENGINE_STATUS["ticks"]}</p>
     <hr><h3>👤 Người chơi ({len(PLAYER_STATE)})</h3>
     """
@@ -206,8 +211,5 @@ def dashboard():
     html += "</body></html>"
     return HTMLResponse(html)
 
-# =============================================================
-# ✅ HOÀN TẤT KHỞI ĐỘNG
-# =============================================================
-
-print(f"[Celestial Engine v3.9.2] ✅ Khởi động hoàn tất | ID={ENGINE_ID}")
+print(f"[Celestial Engine v4.0.1] ✅ Khởi động hoàn tất | ID={ENGINE_ID}")
+send_discord_alert("Thiên Đạo thức giấc ✨", f"Celestial Engine v4.0.1 đã khởi động | ID={ENGINE_ID}", 0x00FFFF)
