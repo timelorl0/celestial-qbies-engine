@@ -1,8 +1,9 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import json, os, time
+from event_bridge import send_to_falix
 
-app = FastAPI(title="Celestial Engine v1.1 – Instant Mode")
+app = FastAPI(title="Celestial Engine v2.0 – Reactive")
 
 DATA_PATH = "data/players.json"
 os.makedirs("data", exist_ok=True)
@@ -27,11 +28,15 @@ async def process_event(req: Request):
         if info["energy"] >= t:
             new_realm = realms[i]
 
+    changed = (new_realm != info["realm"])
     info["realm"] = new_realm
     db[player] = info
     json.dump(db, open(DATA_PATH, "w"), indent=2, ensure_ascii=False)
 
-    print(f"[Thiên Đạo] {player} đạt {new_realm} (năng lượng: {info['energy']:.1f})")
+    # Hồi ứng nếu người chơi vừa đột phá
+    if changed:
+        msg = f"{player} đã đột phá tới {new_realm}!"
+        send_to_falix(player, new_realm, msg)
 
     return JSONResponse({
         "ok": True,
