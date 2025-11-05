@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-import json, os, time
-from event_bridge import send_to_falix
+import json, os, time, requests
 
 app = FastAPI(title="Celestial Engine v2.0 – Reactive")
 
@@ -9,6 +8,9 @@ DATA_PATH = "data/players.json"
 os.makedirs("data", exist_ok=True)
 if not os.path.exists(DATA_PATH):
     json.dump({}, open(DATA_PATH, "w"))
+
+# Địa chỉ Falix (ngrok hoặc public endpoint)
+FALIX_ENDPOINT = "http://localhost:8080/celestial_event"  # Thay nếu cần
 
 @app.post("/process_event")
 async def process_event(req: Request):
@@ -33,10 +35,17 @@ async def process_event(req: Request):
     db[player] = info
     json.dump(db, open(DATA_PATH, "w"), indent=2, ensure_ascii=False)
 
-    # Hồi ứng nếu người chơi vừa đột phá
     if changed:
-        msg = f"{player} đã đột phá tới {new_realm}!"
-        send_to_falix(player, new_realm, msg)
+        message = f"{player} đã đột phá tới {new_realm}!"
+        try:
+            requests.post(FALIX_ENDPOINT, json={
+                "player": player,
+                "realm": new_realm,
+                "message": message
+            }, timeout=3)
+            print(f"↪️ [Thiên Đạo] Phản hồi gửi về Falix: {player} -> {new_realm}")
+        except Exception as e:
+            print(f"⚠️ Lỗi gửi về Falix: {e}")
 
     return JSONResponse({
         "ok": True,
