@@ -1,56 +1,70 @@
+# ==========================================
+# 🌌 Celestial Engine - Thiên Đạo Liên Thông
+# Phiên bản: v5.1 – Kết nối Falix <-> Render
+# ==========================================
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-import json, os, time, requests
+import datetime
+import asyncio
 
-app = FastAPI(title="Celestial Engine v2.0 – Reactive")
+# ======================================================
+# 🔹 Khởi tạo ứng dụng FastAPI chính cho hệ thống Render
+# ======================================================
+app = FastAPI(title="Celestial Engine - Thiên Đạo Liên Thông", version="5.1")
 
-DATA_PATH = "data/players.json"
-os.makedirs("data", exist_ok=True)
-if not os.path.exists(DATA_PATH):
-    json.dump({}, open(DATA_PATH, "w"))
+# ======================================================
+# 🔸 API hệ thống sẵn có (bạn có thể giữ nguyên phần này)
+# ======================================================
+@app.get("/")
+def root():
+    return {
+        "message": "🌠 Celestial Engine đang hoạt động.",
+        "status": "Thiên Đạo Liên Thông sẵn sàng.",
+        "version": "5.1"
+    }
 
-# Địa chỉ Falix (ngrok hoặc public endpoint)
-FALIX_ENDPOINT = "http://localhost:8080/celestial_event"  # Thay nếu cần
+@app.get("/status")
+def status():
+    return {"ok": True, "time": datetime.datetime.now().isoformat()}
 
-@app.post("/process_event")
-async def process_event(req: Request):
-    data = await req.json()
-    player = data.get("player", "Unknown")
-    energy = float(data.get("energy", 0.0))
+# ======================================================
+# ⚡ API đồng bộ Falix <-> Render (Mới)
+# ======================================================
+@app.post("/falix_instant_sync")
+async def falix_sync(request: Request):
+    """
+    Endpoint nhận tín hiệu đồng bộ từ Falix Node.
+    Khi Falix update plugin hoặc auto-deploy, nó sẽ gửi POST về đây.
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
 
-    db = json.load(open(DATA_PATH))
-    info = db.get(player, {"energy": 0.0, "realm": "Phàm Nhân"})
-    info["energy"] += energy
+    event = data.get("event", "unknown")
+    message = data.get("message", "")
+    time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    realms = ["Phàm Nhân", "Luyện Khí", "Trúc Cơ", "Kết Đan", "Nguyên Anh", "Hóa Thần", "Hợp Đạo"]
-    thresholds = [0, 100, 500, 1500, 4000, 8000, 15000]
+    print("───────────────────────────────────────────────")
+    print(f"⚡ [{time}] Nhận tín hiệu Thiên Đạo từ Falix:")
+    print(f"🔹 Sự kiện: {event}")
+    print(f"🔹 Nội dung: {message}")
+    print("───────────────────────────────────────────────")
 
-    new_realm = realms[0]
-    for i, t in enumerate(thresholds):
-        if info["energy"] >= t:
-            new_realm = realms[i]
+    # 🚀 (Tuỳ chọn) Thực thi tự động xử lý hoặc phản hồi về Falix ở đây
+    await asyncio.sleep(0.1)
+    return {"status": "ok", "event": event, "message": message}
 
-    changed = (new_realm != info["realm"])
-    info["realm"] = new_realm
-    db[player] = info
-    json.dump(db, open(DATA_PATH, "w"), indent=2, ensure_ascii=False)
+# ======================================================
+# 🧩 API kiểm tra tức thì (test endpoint)
+# ======================================================
+@app.get("/test_sync")
+def test_sync():
+    time = datetime.datetime.now().strftime("%H:%M:%S")
+    return {"message": f"✅ Falix-Render Sync OK tại {time}"}
 
-    if changed:
-        message = f"{player} đã đột phá tới {new_realm}!"
-        try:
-            requests.post(FALIX_ENDPOINT, json={
-                "player": player,
-                "realm": new_realm,
-                "message": message
-            }, timeout=3)
-            print(f"↪️ [Thiên Đạo] Phản hồi gửi về Falix: {player} -> {new_realm}")
-        except Exception as e:
-            print(f"⚠️ Lỗi gửi về Falix: {e}")
-
-    return JSONResponse({
-        "ok": True,
-        "player": player,
-        "realm": new_realm,
-        "energy": info["energy"],
-        "timestamp": time.time()
-    })
+# ======================================================
+# 🧬 Chạy trực tiếp (dành cho debug hoặc local test)
+# ======================================================
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=10000, reload=True)
