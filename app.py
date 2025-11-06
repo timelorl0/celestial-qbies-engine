@@ -8,16 +8,30 @@
 # © Celestial QBIES Universe Engine
 # ===============================================
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
-import math, time, random, os
+import math, time, random, os, json, threading, requests
+from pathlib import Path
 
-# Nếu app đã tồn tại trong hệ thống QBIES cũ -> tái sử dụng
+# =====================================================
+# ⚙️ KHỞI TẠO HỆ THỐNG
+# =====================================================
+
 try:
     app
 except NameError:
     app = FastAPI(title="Celestial QBIES Unified Engine")
+
+BASE_DIR = Path(__file__).parent
+SNAPSHOT_DIR = BASE_DIR / "coordinator/cache/snapshots"
+SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+SNAPSHOT_FILE = SNAPSHOT_DIR / "universe.qbie"
+
+DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")
+FALIX_API = os.environ.get("FALIX_API", "http://localhost:25575/command")
+AUTO_RELOAD_SECRET = os.environ.get("AUTO_RELOAD_SECRET", "celestial-secret")
 
 # =====================================================
 # 🧬 MÔ HÌNH DỮ LIỆU
@@ -32,16 +46,13 @@ class PlayerEvent(BaseModel):
     position: Optional[List[float]] = None
     extra: Optional[Dict[str, Any]] = None
 
-
 class Action(BaseModel):
     action: str
     target: str
     params: Dict[str, Any] = {}
 
-
 class ResponseModel(BaseModel):
     actions: List[Action] = []
-
 
 # =====================================================
 # ⚙️ CẤU HÌNH CẢNH GIỚI & MÀU LINH KHÍ
@@ -95,17 +106,14 @@ def process_event(ev: PlayerEvent):
 
     actions = []
 
-    # Cập nhật năng lượng và Karma
     if ev.type in ("tick", "tu_luyen"):
         gain = ev.energy or random.uniform(0.8, 1.4)
         p["energy"] += gain
         p["karma"] = ev.karma or p["karma"]
 
-    # Xác định cảnh giới hiện tại
     realm = get_realm_for_energy(p["energy"])
     p["realm_idx"] = next(i for i, r in enumerate(REALMS) if r["name"] == realm["name"])
 
-    # Hiển thị thanh linh khí (đè lên thanh kinh nghiệm)
     actions.append(make_action(
         "set_ui", name,
         energy=round(p["energy"], 1),
@@ -115,27 +123,22 @@ def process_event(ev: PlayerEvent):
         place_over_exp=True
     ))
 
-    # Kiểm tra đột phá
     next_realm = REALMS[p["realm_idx"] + 1] if p["realm_idx"] + 1 < len(REALMS) else None
     if next_realm and p["energy"] >= next_realm["req"]:
         log(f"{name} đủ linh khí đột phá {next_realm['name']}")
-        # Reset năng lượng, nâng cấp cảnh giới, và tự động tiếp tục tu luyện
         p["energy"] = 0.0
         p["realm_idx"] += 1
         new_realm = REALMS[p["realm_idx"]]
         actions.append(make_action("title", name, title="⚡ ĐỘT PHÁ!", subtitle=new_realm["name"]))
         actions.append(make_action("play_sound", name, sound="ENTITY_PLAYER_LEVELUP", volume=1.2, pitch=0.6))
         actions.append(make_action("particle", name, type="TOTEM", count=60, offset=[0, 1.5, 0]))
-        # Sau khi đột phá, Thiên Đạo tự khởi động lại tu luyện
         actions.append(make_action("auto_continue", name, realm=new_realm["name"]))
 
-    # Khi người chơi đang tu luyện
     if ev.type == "tu_luyen":
         actions.append(make_action("particle", name, type="ENCHANTMENT_TABLE", count=16, offset=[0, 1.0, 0]))
         actions.append(make_action("play_sound", name, sound="BLOCK_ENCHANTMENT_TABLE_USE", volume=0.7, pitch=1.2))
 
     return ResponseModel(actions=actions)
-
 
 # =====================================================
 # ☯️ THIÊN ĐẠO HỎI Ý KIẾN
@@ -157,13 +160,81 @@ def ask_question(player: str, question: str):
 def ping():
     return {"ok": True, "time": time.time(), "realms": len(REALMS), "players": len(PLAYER_STORE)}
 
-
 # =====================================================
-# 🧠 GIỮ HỆ THỐNG QBIES CŨ HOẠT ĐỘNG
-# =====================================================
-# Giữ nguyên các route, module và nền tảng QBIES gốc
-# Nếu phía dưới file bạn có import / app.include_router(...) thì không xoá
-# Chúng sẽ tự động đồng bộ cùng Thiên Đạo
+# 💾 TỰ ĐỘNG SNAPSHOT .QBIE
 # =====================================================
 
-# (Các phần cũ của bạn sẽ được giữ nguyên ở đây)
+def save_snapshot():
+    data = {
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "energy_map": {p: v["energy"] for p, v in PLAYER_STORE.items()},
+        "realm_map": {p: REALMS[v["realm_idx"]]["name"] for p, v in PLAYER_STORE.items()},
+        "players": list(PLAYER_STORE.keys()),
+    }
+    with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print(f"💾 [Fractal] Snapshot saved: {SNAPSHOT_FILE}")
+
+def auto_snapshot():
+    while True:
+        save_snapshot()
+        time.sleep(600)
+
+threading.Thread(target=auto_snapshot, daemon=True).start()
+
+# =====================================================
+# 💓 FALIX HEARTBEAT
+# =====================================================
+
+def falix_heartbeat():
+    while True:
+        time.sleep(30)
+        try:
+            requests.post(FALIX_API, json={"command": "list"})
+            print("💓 [Heartbeat] Sent to Falix.")
+        except Exception as e:
+            print("⚠️ [Falix] Heartbeat failed:", e)
+
+threading.Thread(target=falix_heartbeat, daemon=True).start()
+
+# =====================================================
+# 🖥️ DASHBOARD
+# =====================================================
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard():
+    html = f"""
+    <html>
+    <head>
+      <title>Celestial Dashboard</title>
+      <meta http-equiv="refresh" content="15">
+      <style>
+        body {{ background-color: #0b0b0b; color: #00ffcc; font-family: monospace; text-align: center; }}
+        .card {{ background: #111; padding: 20px; margin: 20px auto; width: 60%; border-radius: 10px; }}
+      </style>
+    </head>
+    <body>
+      <h1>🌌 Celestial Engine Dashboard</h1>
+      <div class="card">
+        <p>💾 Snapshot: {SNAPSHOT_FILE.name}</p>
+        <p>🕒 {time.strftime("%Y-%m-%d %H:%M:%S")}</p>
+        <p>👥 Players: {len(PLAYER_STORE)}</p>
+        <p>💓 Heartbeat: Active</p>
+      </div>
+      <footer>⚡ Celestial QBIES Universe Engine</footer>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
+
+# =====================================================
+# 🏁 MAIN
+# =====================================================
+
+@app.get("/")
+def root():
+    return {"msg": "Celestial QBIES Unified Engine Active", "time": time.time()}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8000)
