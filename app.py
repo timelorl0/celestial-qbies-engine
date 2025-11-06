@@ -8,11 +8,11 @@
 # © Celestial QBIES Universe Engine
 # ===============================================
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
-import math, time, random, os, json, threading, requests
+import time, random, os, json, threading, requests
 from pathlib import Path
 
 # =====================================================
@@ -20,12 +20,15 @@ from pathlib import Path
 # =====================================================
 
 try:
-    app
+    app  # nếu app đã được tạo ở nơi khác
 except NameError:
     app = FastAPI(title="Celestial QBIES Unified Engine")
 
 BASE_DIR = Path(__file__).parent
-SNAPSHOT_DIR = BASE_DIR / "coordinator/cache/snapshots"
+
+# ❗ ĐỔI THƯ MỤC CACHE để tránh đụng tên file `cache`
+SNAPSHOT_ROOT = BASE_DIR / "cache_data"
+SNAPSHOT_DIR = SNAPSHOT_ROOT / "snapshots"
 SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 SNAPSHOT_FILE = SNAPSHOT_DIR / "universe.qbie"
 
@@ -68,7 +71,7 @@ REALMS = [
     {"name": "Hóa Thần", "req": 15000, "color": "§5"},
 ]
 
-def get_realm_for_energy(e):
+def get_realm_for_energy(e: float):
     current = REALMS[0]
     for r in REALMS:
         if e >= r["req"]:
@@ -77,16 +80,16 @@ def get_realm_for_energy(e):
             break
     return current
 
-PLAYER_STORE = {}
+PLAYER_STORE: Dict[str, Dict[str, Any]] = {}
 
 # =====================================================
 # 🪶 HÀM HỖ TRỢ
 # =====================================================
 
-def make_action(act, target, **params):
+def make_action(act: str, target: str, **params):
     return Action(action=act, target=target, params=params)
 
-def log(msg):
+def log(msg: str):
     print(f"[Thiên Đạo] {msg}")
 
 # =====================================================
@@ -101,28 +104,32 @@ def process_event(ev: PlayerEvent):
         "realm_idx": 0,
         "karma": 0.0,
         "last_tick": time.time(),
-        "auto": True
+        "auto": True,
     })
 
-    actions = []
+    actions: List[Action] = []
 
+    # Cập nhật năng lượng / karma
     if ev.type in ("tick", "tu_luyen"):
         gain = ev.energy or random.uniform(0.8, 1.4)
         p["energy"] += gain
         p["karma"] = ev.karma or p["karma"]
 
+    # Cảnh giới hiện tại
     realm = get_realm_for_energy(p["energy"])
     p["realm_idx"] = next(i for i, r in enumerate(REALMS) if r["name"] == realm["name"])
 
+    # UI linh khí
     actions.append(make_action(
         "set_ui", name,
         energy=round(p["energy"], 1),
         required=REALMS[min(p["realm_idx"] + 1, len(REALMS) - 1)]["req"],
         realm=realm["name"],
         color=realm["color"],
-        place_over_exp=True
+        place_over_exp=True,
     ))
 
+    # Đột phá
     next_realm = REALMS[p["realm_idx"] + 1] if p["realm_idx"] + 1 < len(REALMS) else None
     if next_realm and p["energy"] >= next_realm["req"]:
         log(f"{name} đủ linh khí đột phá {next_realm['name']}")
@@ -134,6 +141,7 @@ def process_event(ev: PlayerEvent):
         actions.append(make_action("particle", name, type="TOTEM", count=60, offset=[0, 1.5, 0]))
         actions.append(make_action("auto_continue", name, realm=new_realm["name"]))
 
+    # Hiệu ứng khi tu luyện chủ động
     if ev.type == "tu_luyen":
         actions.append(make_action("particle", name, type="ENCHANTMENT_TABLE", count=16, offset=[0, 1.0, 0]))
         actions.append(make_action("play_sound", name, sound="BLOCK_ENCHANTMENT_TABLE_USE", volume=0.7, pitch=1.2))
@@ -158,7 +166,12 @@ def ask_question(player: str, question: str):
 
 @app.get("/ping")
 def ping():
-    return {"ok": True, "time": time.time(), "realms": len(REALMS), "players": len(PLAYER_STORE)}
+    return {
+        "ok": True,
+        "time": time.time(),
+        "realms": len(REALMS),
+        "players": len(PLAYER_STORE),
+    }
 
 # =====================================================
 # 💾 TỰ ĐỘNG SNAPSHOT .QBIE
@@ -171,6 +184,7 @@ def save_snapshot():
         "realm_map": {p: REALMS[v["realm_idx"]]["name"] for p, v in PLAYER_STORE.items()},
         "players": list(PLAYER_STORE.keys()),
     }
+    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     print(f"💾 [Fractal] Snapshot saved: {SNAPSHOT_FILE}")
@@ -178,7 +192,7 @@ def save_snapshot():
 def auto_snapshot():
     while True:
         save_snapshot()
-        time.sleep(600)
+        time.sleep(600)  # 10 phút
 
 threading.Thread(target=auto_snapshot, daemon=True).start()
 
@@ -228,13 +242,9 @@ async def dashboard():
     return HTMLResponse(content=html)
 
 # =====================================================
-# 🏁 MAIN
+# 🏁 ROOT
 # =====================================================
 
 @app.get("/")
 def root():
     return {"msg": "Celestial QBIES Unified Engine Active", "time": time.time()}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000)
