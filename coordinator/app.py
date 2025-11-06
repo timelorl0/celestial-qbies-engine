@@ -1,68 +1,23 @@
 # ===============================================
-# 🌌 CELESTIAL QBIES – THIÊN ĐỊA HỢP NHẤT v1.0
+# ⚡ CELESTIAL QBIES ENGINE (Render - Thiên Đạo)
 # -----------------------------------------------
-# Thiên (Render): Lõi trí tuệ, tu luyện, snapshot, dashboard
-# Địa (Falix): Server Minecraft, gửi sự kiện & nhận lệnh
-# Snapshot: universe.qbie – trí nhớ vũ trụ
+# Tích hợp Thiên Đạo với Falix (Địa) và hệ thống plugin auto-sync.
 # -----------------------------------------------
 # © Celestial QBIES Universe Engine
 # ===============================================
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
-from pathlib import Path
-import time, random, os, json, threading, requests
+import os, json, time, random, re, threading
+
+app = FastAPI(title="Celestial QBIES Render Engine")
 
 # =====================================================
-# ⚙️ KHỞI TẠO THIÊN ĐẠO (RENDER ENGINE)
+# 🧬 CẤU HÌNH & DỮ LIỆU
 # =====================================================
-
-try:
-    app  # nếu app đã tồn tại
-except NameError:
-    app = FastAPI(title="Celestial QBIES Unified Engine")
-
-BASE_DIR = Path(__file__).parent
-
-# Thư mục lưu snapshot vũ trụ
-SNAPSHOT_ROOT = BASE_DIR / "cache_data"
-SNAPSHOT_DIR = SNAPSHOT_ROOT / "snapshots"
-SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
-SNAPSHOT_FILE = SNAPSHOT_DIR / "universe.qbie"
-
-# Cấu hình liên kết Địa (Falix) – KHÔNG dùng link timer client
-FALIX_API = os.environ.get("FALIX_API", "").strip()
-# Ví dụ hợp lệ:
-# FALIX_API = "http://your-falix-server-or-proxy/status"
-
-PLAYER_STORE: Dict[str, Dict[str, Any]] = {}
-
-# =====================================================
-# 🧬 MÔ HÌNH DỮ LIỆU
-# =====================================================
-
-class PlayerEvent(BaseModel):
-    type: str
-    player: str
-    realm: Optional[str] = None
-    energy: float = 0.0
-    karma: float = 0.0
-    position: Optional[List[float]] = None
-    extra: Optional[Dict[str, Any]] = None
-
-class Action(BaseModel):
-    action: str
-    target: str
-    params: Dict[str, Any] = {}
-
-class ResponseModel(BaseModel):
-    actions: List[Action] = []
-
-# =====================================================
-# ⚙️ CẤU HÌNH CẢNH GIỚI & LINH KHÍ
-# =====================================================
+PLAYER_STORE = {}
 
 REALMS = [
     {"name": "Phàm Nhân", "req": 0, "color": "§7"},
@@ -74,7 +29,7 @@ REALMS = [
     {"name": "Hóa Thần", "req": 15000, "color": "§5"},
 ]
 
-def get_realm_for_energy(e: float) -> Dict[str, Any]:
+def get_realm_for_energy(e):
     current = REALMS[0]
     for r in REALMS:
         if e >= r["req"]:
@@ -83,227 +38,150 @@ def get_realm_for_energy(e: float) -> Dict[str, Any]:
             break
     return current
 
-def make_action(act: str, target: str, **params) -> Action:
+
+# =====================================================
+# 🧠 CÁC MÔ HÌNH DỮ LIỆU
+# =====================================================
+class PlayerEvent(BaseModel):
+    type: str
+    player: str
+    realm: Optional[str] = None
+    energy: float = 0.0
+    karma: float = 0.0
+    position: Optional[List[float]] = None
+    extra: Optional[Dict[str, Any]] = None
+
+
+class Action(BaseModel):
+    action: str
+    target: str
+    params: Dict[str, Any] = {}
+
+
+class ResponseModel(BaseModel):
+    actions: List[Action] = []
+
+
+# =====================================================
+# 🌌 HÀM HỖ TRỢ
+# =====================================================
+def make_action(act, target, **params):
     return Action(action=act, target=target, params=params)
 
-def log(msg: str):
+def log(msg):
     print(f"[Thiên Đạo] {msg}")
 
-# =====================================================
-# 🌌 API: NHẬN SỰ KIỆN TỪ ĐỊA (FALIX / MINECRAFT)
-# =====================================================
 
+# =====================================================
+# ⚙️ API XỬ LÝ SỰ KIỆN
+# =====================================================
 @app.post("/process_event", response_model=ResponseModel)
 def process_event(ev: PlayerEvent):
-    """
-    Plugin trên Falix gửi sự kiện dạng JSON:
-    {
-      "type": "tu_luyen" | "tick" | "khac",
-      "player": "TenNguoiChoi",
-      "energy": 3.5,
-      "karma": 0.1
-    }
-    """
     name = ev.player
     p = PLAYER_STORE.setdefault(name, {
         "energy": 0.0,
         "realm_idx": 0,
         "karma": 0.0,
         "last_tick": time.time(),
-        "auto": True,
+        "auto": True
     })
 
-    actions: List[Action] = []
+    actions = []
 
-    # Cập nhật năng lượng
     if ev.type in ("tick", "tu_luyen"):
         gain = ev.energy or random.uniform(0.8, 1.4)
         p["energy"] += gain
         p["karma"] = ev.karma or p["karma"]
-        p["last_tick"] = time.time()
 
     realm = get_realm_for_energy(p["energy"])
     p["realm_idx"] = next(i for i, r in enumerate(REALMS) if r["name"] == realm["name"])
 
-    # UI linh khí đặt lên thanh exp
     actions.append(make_action(
         "set_ui", name,
         energy=round(p["energy"], 1),
         required=REALMS[min(p["realm_idx"] + 1, len(REALMS) - 1)]["req"],
         realm=realm["name"],
         color=realm["color"],
-        place_over_exp=True,
+        place_over_exp=True
     ))
 
-    # Đột phá
     next_realm = REALMS[p["realm_idx"] + 1] if p["realm_idx"] + 1 < len(REALMS) else None
     if next_realm and p["energy"] >= next_realm["req"]:
         log(f"{name} đủ linh khí đột phá {next_realm['name']}")
         p["energy"] = 0.0
         p["realm_idx"] += 1
         new_realm = REALMS[p["realm_idx"]]
-        actions += [
-            make_action("title", name, title="⚡ ĐỘT PHÁ!", subtitle=new_realm["name"]),
-            make_action("play_sound", name, sound="ENTITY_PLAYER_LEVELUP", volume=1.2, pitch=0.6),
-            make_action("particle", name, type="TOTEM", count=60, offset=[0, 1.5, 0]),
-            make_action("auto_continue", name, realm=new_realm["name"]),
-        ]
+        actions.append(make_action("title", name, title="⚡ ĐỘT PHÁ!", subtitle=new_realm["name"]))
+        actions.append(make_action("play_sound", name, sound="ENTITY_PLAYER_LEVELUP", volume=1.2, pitch=0.6))
+        actions.append(make_action("particle", name, type="TOTEM", count=60, offset=[0, 1.5, 0]))
+        actions.append(make_action("auto_continue", name, realm=new_realm["name"]))
 
-    # Hiệu ứng tu luyện chủ động
     if ev.type == "tu_luyen":
-        actions += [
-            make_action("particle", name, type="ENCHANTMENT_TABLE", count=16, offset=[0, 1.0, 0]),
-            make_action("play_sound", name, sound="BLOCK_ENCHANTMENT_TABLE_USE", volume=0.7, pitch=1.2),
-        ]
+        actions.append(make_action("particle", name, type="ENCHANTMENT_TABLE", count=16, offset=[0, 1.0, 0]))
+        actions.append(make_action("play_sound", name, sound="BLOCK_ENCHANTMENT_TABLE_USE", volume=0.7, pitch=1.2))
 
     return ResponseModel(actions=actions)
 
-# =====================================================
-# ☯️ API: PING / STATUS
-# =====================================================
 
+# =====================================================
+# ☯️ KIỂM TRA HỆ THỐNG
+# =====================================================
 @app.get("/ping")
 def ping():
-    return {
-        "ok": True,
-        "time": time.time(),
-        "players": len(PLAYER_STORE),
-        "realms": len(REALMS),
-    }
+    return {"ok": True, "time": time.time(), "realms": len(REALMS), "players": len(PLAYER_STORE)}
 
-@app.get("/status")
-def status():
-    return {
-        "engine": "Celestial QBIES Unified Engine",
-        "snapshot": str(SNAPSHOT_FILE),
-        "players": list(PLAYER_STORE.keys()),
-        "falix_api_configured": bool(FALIX_API),
-        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-    }
 
 # =====================================================
-# 💾 SNAPSHOT VŨ TRỤ .QBIE
+# 🌍 API: CUNG CẤP MÃ QCoreBridge.java CHO FALIX
 # =====================================================
-
-def save_snapshot():
-    data = {
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "players": list(PLAYER_STORE.keys()),
-        "energy_map": {p: v["energy"] for p, v in PLAYER_STORE.items()},
-        "realm_map": {p: REALMS[v["realm_idx"]]["name"] for p, v in PLAYER_STORE.items()},
-    }
-    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    print(f"💾 [Fractal] Snapshot saved: {SNAPSHOT_FILE}")
-
-def auto_snapshot_loop():
-    while True:
-        save_snapshot()
-        time.sleep(600)  # 10 phút
-
-@app.post("/snapshot/save")
-def snapshot_save_manual():
-    save_snapshot()
-    return {"ok": True, "file": str(SNAPSHOT_FILE)}
-
-@app.get("/snapshot/load")
-def snapshot_load():
-    if not SNAPSHOT_FILE.exists():
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-    with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return data
-
-# =====================================================
-# 🌍 FALIX HEARTBEAT (HỢP LỆ)
-# =====================================================
-
-def falix_heartbeat_loop():
+@app.get("/api/plugin/qcorebridge/latest", response_class=PlainTextResponse)
+def get_latest_qcorebridge():
     """
-    Gửi request nhẹ tới API trạng thái server Falix (do bạn tự cấu hình).
-    KHÔNG dùng link 'timer' client.
-    Ví dụ: proxy nhỏ của bạn expose /status từ Minecraft server.
+    Cung cấp mã QCoreBridge.java mới nhất cho Falix tải và biên dịch tự động.
+    Tự động lọc bỏ dòng trùng lặp.
     """
-    if not FALIX_API:
-        print("ℹ️ [Địa Đạo] FALIX_API chưa cấu hình, bỏ qua heartbeat.")
-        return
+    src_path = os.path.join("coordinator", "sync_data", "QCoreBridge.java")
 
+    if not os.path.exists(src_path):
+        return "// ❌ Không tìm thấy file QCoreBridge.java trên server Render.\n"
+
+    try:
+        with open(src_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        seen = set()
+        filtered = []
+        for line in lines:
+            key = re.sub(r"\s+", "", line)
+            if key not in seen:
+                filtered.append(line)
+                seen.add(key)
+
+        code = "".join(filtered)
+        header = "// ✅ QCoreBridge.java (Auto-synced from Render)\n"
+        return header + code
+
+    except Exception as e:
+        return f"// ⚠️ Lỗi khi đọc file: {e}\n"
+
+
+# =====================================================
+# 🧠 TỰ LƯU TRẠNG THÁI
+# =====================================================
+SNAPSHOT_DIR = "coordinator/cache_data/snapshots"
+os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+
+def auto_snapshot():
     while True:
-        time.sleep(60)  # 60 giây hỏi thăm 1 lần
         try:
-            r = requests.get(FALIX_API, timeout=5)
-            print(f"🌍 [Địa Đạo] Falix status: {r.status_code}")
+            snap_file = os.path.join(SNAPSHOT_DIR, "universe.qbie")
+            with open(snap_file, "w", encoding="utf-8") as f:
+                json.dump(PLAYER_STORE, f, ensure_ascii=False, indent=2)
+            print(f"💾 [Fractal] Snapshot saved: {snap_file}")
         except Exception as e:
-            print("⚠️ [Địa Đạo] Falix heartbeat error:", e)
+            print(f"⚠️ Snapshot error: {e}")
+        time.sleep(600)
 
-# =====================================================
-# 🖥️ DASHBOARD
-# =====================================================
+threading.Thread(target=auto_snapshot, daemon=True).start()
 
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard():
-    now = time.strftime("%Y-%m-%d %H:%M:%S")
-    html = f"""
-    <html>
-    <head>
-      <title>Celestial Dashboard</title>
-      <meta http-equiv="refresh" content="15">
-      <style>
-        body {{ background-color:#050608; color:#00ffcc; font-family:monospace; text-align:center; }}
-        .card {{ background:#101319; padding:20px; margin:20px auto; width:60%; border-radius:10px; }}
-        h1 {{ color:#00ffff; }}
-        table {{ margin:0 auto; border-collapse:collapse; color:#b8faff; }}
-        td,th {{ border:1px solid #1f2533; padding:6px 10px; }}
-      </style>
-    </head>
-    <body>
-      <h1>🌌 Celestial QBIES – Thiên Địa Hợp Nhất</h1>
-      <div class="card">
-        <p>🕒 Thời gian: {now}</p>
-        <p>💾 Snapshot: {SNAPSHOT_FILE.name}</p>
-        <p>👥 Số người chơi được theo dõi: {len(PLAYER_STORE)}</p>
-        <p>🌍 Falix API cấu hình: {"✅" if FALIX_API else "❌"}</p>
-      </div>
-
-      <div class="card">
-        <h2>👤 Người chơi & Cảnh giới</h2>
-        <table>
-          <tr><th>Tên</th><th>Cảnh giới</th><th>Linh khí</th></tr>
-          { "".join(
-              f"<tr><td>{name}</td><td>{REALMS[v['realm_idx']]['name']}</td><td>{round(v['energy'],1)}</td></tr>"
-              for name,v in PLAYER_STORE.items()
-            ) or "<tr><td colspan='3'>Chưa có ai tu luyện...</td></tr>"
-          }
-        </table>
-      </div>
-
-      <footer>⚡ Celestial QBIES Universe Engine</footer>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html)
-
-# =====================================================
-# 🔁 STARTUP HOOK – KHỞI ĐỘNG CÁC VÒNG THIÊN / ĐỊA
-# =====================================================
-
-@app.on_event("startup")
-def on_startup():
-    # Auto snapshot
-    threading.Thread(target=auto_snapshot_loop, daemon=True).start()
-    # Falix heartbeat (nếu FALIX_API đã cấu hình)
-    threading.Thread(target=falix_heartbeat_loop, daemon=True).start()
-    print("🌌 [Thiên Đạo] Startup complete – snapshot + heartbeat loops active.")
-
-# =====================================================
-# 🏁 ROOT
-# =====================================================
-
-@app.get("/")
-def root():
-    return {
-        "msg": "Celestial QBIES Unified Engine Active",
-        "time": time.time(),
-        "players": len(PLAYER_STORE),
-    }
+print("🌌 [Thiên Đạo] Render Engine sẵn sàng.")
