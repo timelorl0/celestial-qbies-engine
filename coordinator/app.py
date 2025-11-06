@@ -1,16 +1,16 @@
 # app.py
-# Celestial Engine - main API + plugin reload receiver + simple dashboard
+# Celestial Engine v3.x – Render Core with QBIES + Fractal Integration
+
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse
-import os, json, time, threading, subprocess, shutil, hashlib
+import os, json, time, threading, subprocess, shutil, hashlib, requests
 from pathlib import Path
-import requests
 
-# Config (edit / set env vars as needed)
+# ===============================[ CONFIG ]===============================
 BASE_DIR = Path(__file__).parent
 UPDATES_DIR = BASE_DIR / "render_updates"
 METADATA_PATH = BASE_DIR / "render_meta.json"
-DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")  # set env or paste string here
+DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")
 FALIX_API = os.environ.get("FALIX_API", "http://localhost:25575/command")
 AUTO_RELOAD_SECRET = os.environ.get("AUTO_RELOAD_SECRET", "celestial-secret")
 
@@ -18,7 +18,101 @@ os.makedirs(UPDATES_DIR, exist_ok=True)
 
 app = FastAPI(title="Celestial Engine v3.x - Render")
 
-# in-memory players
+# ===============================[ FRACTAL ENGINE + QBIES ]===============================
+import zlib, json as js, os
+
+class QBIESCompressor:
+    """QBIES nén fractal universe theo cơ chế lượng tử hoá dữ liệu"""
+    def compress(self, obj):
+        raw = js.dumps(obj, ensure_ascii=False).encode("utf-8")
+        return zlib.compress(raw, level=6)
+    def decompress(self, data):
+        raw = zlib.decompress(data)
+        return js.loads(raw.decode("utf-8"))
+
+def write_snapshot(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    comp = QBIESCompressor().compress(data)
+    with open(path, "wb") as f:
+        f.write(comp)
+
+def read_snapshot(path):
+    comp = open(path, "rb").read()
+    return QBIESCompressor().decompress(comp)
+
+class FractalEngine:
+    def __init__(self, cache_dir="cache/snapshots", filename="universe.qbie"):
+        self.cache_dir = cache_dir
+        self.filename = filename
+        self.path = os.path.join(cache_dir, filename)
+        os.makedirs(cache_dir, exist_ok=True)
+        self.universe = {"meta": {"genesis": time.time()}, "players": {}}
+        self.lock = threading.RLock()
+        self.dirty = False
+        self.running = False
+        self.autosave_interval = 30  # giây
+
+    def load_universe(self):
+        if os.path.exists(self.path):
+            try:
+                self.universe = read_snapshot(self.path)
+                print("🌌 [Fractal] Đã nạp snapshot:", self.path)
+            except Exception as e:
+                print("⚠ [Fractal] Không thể nạp snapshot:", e)
+        else:
+            print("✨ [Fractal] Bắt đầu vũ trụ mới (GENESIS).")
+        self.start_autosave()
+
+    def evolve(self, ctx=None):
+        with self.lock:
+            now = time.time()
+            meta = self.universe.setdefault("meta", {})
+            meta["last_tick"] = now
+            players = self.universe.setdefault("players", {})
+            if ctx and "player" in ctx:
+                name = ctx["player"]
+                info = players.setdefault(name, {"energy": 0, "realm": "Phàm Nhân", "visits": 0})
+                info["visits"] += 1
+                info["energy"] += ctx.get("energy", 0)
+                info["realm"] = ctx.get("realm", info["realm"])
+            self.dirty = True
+
+    def save_universe(self):
+        with self.lock:
+            write_snapshot(self.path, self.universe)
+            self.dirty = False
+            print("💾 [Fractal] Snapshot saved.")
+
+    def start_autosave(self):
+        if self.running: return
+        self.running = True
+        def loop():
+            while self.running:
+                time.sleep(self.autosave_interval)
+                if self.dirty:
+                    self.save_universe()
+        threading.Thread(target=loop, daemon=True).start()
+
+    def stop_autosave(self):
+        self.running = False
+        self.save_universe()
+        print("🛑 [Fractal] Autosave stopped.")
+
+fractal_engine = FractalEngine()
+
+@app.on_event("startup")
+async def startup_event():
+    print("🚀 Render khởi động – tải Fractal Universe...")
+    fractal_engine.load_universe()
+    fractal_engine.evolve({"startup": True})
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    fractal_engine.stop_autosave()
+# =======================================================================
+
+
+# ===============================[ PLAYER / REALM SYSTEM ]===============================
 PLAYER_STATE = {}
 REALMS = ["Phàm Nhân","Nhập Môn","Luyện Khí","Trúc Cơ","Kết Đan","Nguyên Anh","Hóa Thần","Luyện Hư","Hợp Thể","Đại Thừa","Độ Kiếp"]
 REALM_THRESHOLDS = [0,50,200,800,3000,8000,20000,50000,120000,300000,1000000]
@@ -31,27 +125,40 @@ def save_meta():
         pass
 
 def post_discord(msg: str):
-    if not DISCORD_WEBHOOK:
-        return
+    if not DISCORD_WEBHOOK: return
     try:
         requests.post(DISCORD_WEBHOOK, json={"content": msg}, timeout=5)
     except Exception:
         pass
 
+# ===============================[ API ENDPOINTS ]===============================
 @app.post("/process_event")
 async def process_event(req: Request):
     try:
         data = await req.json()
     except:
         raise HTTPException(400, "invalid json")
+
     name = data.get("player", "Unknown")
     gain = float(data.get("energy", 1.0))
     p = PLAYER_STATE.setdefault(name, {"path": None, "energy": 0.0, "realm": "Phàm Nhân"})
-    # choose path logic (if client asked)
+
+    # chọn đường tu nếu chưa chọn
     if not p.get("path"):
-        return {"choose_path": True, "options": [{"id":"tutien","name":"Tu Tiên"},{"id":"tudao","name":"Tu Đạo"},{"id":"tuma","name":"Tu Ma"},{"id":"tuluyen","name":"Tu Tự Do"}]}
+        return {"choose_path": True, "options": [
+            {"id":"tutien","name":"Tu Tiên"},
+            {"id":"tudao","name":"Tu Đạo"},
+            {"id":"tuma","name":"Tu Ma"},
+            {"id":"tuluyen","name":"Tu Tự Do"}
+        ]}
+
+    # cộng năng lượng
     p["energy"] += gain
-    # compute realm
+
+    # Fractal học và tiến hoá
+    fractal_engine.evolve({"player": name, "energy": gain, "realm": p["realm"]})
+
+    # xác định cảnh giới
     idx = 0
     for i, th in enumerate(REALM_THRESHOLDS):
         if p["energy"] >= th:
@@ -59,10 +166,11 @@ async def process_event(req: Request):
     new_realm = REALMS[min(idx, len(REALMS)-1)]
     p["realm"] = new_realm
     save_meta()
+
     actions = [{"action":"set_ui","target":name,"params":{"path":p["path"],"realm":new_realm,"energy":round(p["energy"],2)}}]
-    # if reached next threshold -> create breakthrough actions
+
+    # Đột phá
     if idx + 1 < len(REALM_THRESHOLDS) and p["energy"] >= REALM_THRESHOLDS[min(idx+1,len(REALM_THRESHOLDS)-1)]:
-        # reward / actions
         actions += [
             {"action":"title","target":name,"params":{"title":"⚡ ĐỘT PHÁ!","subtitle":REALMS[min(idx+1,len(REALMS)-1)]}},
             {"action":"particle","target":name,"params":{"type":"TOTEM","count":80}},
@@ -71,6 +179,7 @@ async def process_event(req: Request):
         p["energy"] = 0.0
         p["realm"] = REALMS[min(idx+1,len(REALMS)-1)]
         save_meta()
+
     return {"ok": True, "player": name, "realm": p["realm"], "actions": actions}
 
 @app.post("/choose_path")
@@ -87,17 +196,14 @@ async def choose_path(req: Request):
 
 @app.post("/plugin/ping")
 async def plugin_ping(req: Request):
-    # simple ping used by falix plugin to signal alive
     return {"ok": True, "time": time.time()}
 
 @app.post("/auto_reload")
 async def auto_reload(req: Request):
-    # Endpoint used by plugin to request reload; protect by secret optionally
     data = await req.json()
     secret = data.get("secret", "")
     if AUTO_RELOAD_SECRET and secret != AUTO_RELOAD_SECRET:
         raise HTTPException(403, "forbidden")
-    # respond with instruction to plugin or ack
     return {"ok": True, "message":"Render received reload request"}
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -110,7 +216,7 @@ async def dashboard():
     html += "</body></html>"
     return HTMLResponse(html)
 
-# -------------- Self-update monitor for Render (simple) --------------
+# ===============================[ AUTO-UPDATER ]===============================
 def file_hash(path: Path):
     try:
         h = hashlib.sha256()
@@ -124,9 +230,7 @@ def file_hash(path: Path):
         return None
 
 def render_update_worker():
-    # keep map of filename->hash
     known = {}
-    # load existing
     for p in UPDATES_DIR.iterdir():
         if p.is_file():
             known[p.name] = file_hash(p)
@@ -136,17 +240,13 @@ def render_update_worker():
                 if not p.is_file(): continue
                 h = file_hash(p)
                 if p.name not in known or known[p.name] != h:
-                    # new/changed file detected
                     try:
-                        # simple policy: if app.py changed -> attempt to validate by syntax check
                         if p.name.endswith(".py"):
-                            # run syntax check
                             r = subprocess.run(["python","-m","py_compile", str(p)], capture_output=True, text=True)
                             if r.returncode != 0:
                                 post_discord(f"[RenderUpdater] Syntax error in {p.name}: {r.stderr[:300]}")
                                 known[p.name] = h
                                 continue
-                        # backup and copy into place (overwrite)
                         dest = BASE_DIR / p.name
                         backup = BASE_DIR / f"{p.name}.bak.{int(time.time())}"
                         if dest.exists():
@@ -160,9 +260,7 @@ def render_update_worker():
         except Exception:
             time.sleep(4)
 
-# record start time
 app.state.start_time = time.time()
-# start background thread
 threading.Thread(target=render_update_worker, daemon=True).start()
 
 print(f"[Celestial Render] ready")
